@@ -2,26 +2,27 @@ import os
 import sys
 import pandas as pd
 import logging
-from pathlib import Path
 
-from filtering_pipeline.steps.step import Step
-from filtering_pipeline.steps.save_step import Save
-from filtering_pipeline.steps.preparevina_step import PrepareVina
-from filtering_pipeline.steps.preparechai_step import PrepareChai
-from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
+from ..steps.step import Step
+from ..steps.save_step import Save
+from ..steps.preparevina_step import PrepareVina
+from ..steps.preparechai_step import PrepareChai
+from ..steps.prepareboltz_step import PrepareBoltz
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s'
+)
 
 
 def log_section(title: str):
     border = "#" * 60
-    logging.info(f"\n{border}")
-    logging.info(f"### {title.upper().center(52)} ###")
-    logging.info(f"{border}\n")
-
-def log_subsection(title: str):
-    border = "#" * 60
-    logging.info(f"\n{border}")
-    logging.info(f"### {title.center(52)} ###")
-    logging.info(f"{border}\n")
+    logger.info(f"\n{border}")
+    logger.info(f"### {title.center(54)} ###")
+    logger.info(f"{border}\n")
 
 
 def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl', ligand_name: str = '', output_dir = 'preparedfiles_for_superimposition/'):
@@ -31,11 +32,11 @@ def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl'
     '''
     # Prepare vina files
     df_vina = pd.read_pickle(df_vina)
-    prepared_vina = df_vina << (PrepareVina('output_dir', ligand_name,  output_dir))
+    df_vina << (PrepareVina('output_dir', ligand_name,  output_dir) >> Save('preparedfiles_vina.pkl'))
 
     # Prepare chai files
     df_chai = pd.read_pickle(df_chai)
-    prepared_chai = df_chai << (PrepareChai('output_dir', output_dir, 1))
+    df_chai << (PrepareChai('output_dir', output_dir, 1) >> Save('preparedfiles_chai.pkl'))
 
     # Prepare boltz files
     df_boltz = df_vina.copy()
@@ -46,15 +47,19 @@ def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl'
     df_boltz = df_boltz[df_boltz['boltz_dir'].notna()]
     df_boltz = df_boltz[df_boltz['boltz_dir'].apply(lambda x: isinstance(x, (str, Path)))]
 
-    prepared_boltz = df_boltz << (PrepareBoltz('boltz_dir' , output_dir, 1))
+    df_boltz << (PrepareBoltz('boltz_dir' , output_dir, 1) >> Save('preparedfiles_boltz.pkl'))
 
     # Combine prepared dataframes
-    df_combined = prepared_vina.merge(
-        prepared_chai[['Entry', 'chai_files_for_superimposition']],
+    df_chai = pd.read_pickle('preparedfiles_chai.pkl') 
+    df_vina = pd.read_pickle('preparedfiles_vina.pkl')
+    df_boltz = pd.read_pickle('preparedfiles_boltz.pkl')
+
+    df_combined = df_vina.merge(
+        df_chai[['Entry', 'chai_files_for_superimposition']],
         on='Entry',
         how='left'  
     ).merge(
-        prepared_boltz[['Entry', 'boltz_files_for_superimposition']],
+        df_boltz[['Entry', 'boltz_files_for_superimposition']],
         on='Entry',
         how='left'  
     )
@@ -66,8 +71,5 @@ def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl'
         df_combined['chai_files_for_superimposition'].apply(lambda x: isinstance(x, list))
     ]
 
-    current_script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    output_dir = Path(current_script_dir)
-    df.to_pickle(f'{output_dir}/df_for_superimposition')
-
+    df.to_pickle('df_for_superimposition')
 

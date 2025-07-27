@@ -1,4 +1,4 @@
-from steps.step import Step
+from filtering_pipeline.steps.step import Step
 
 import pandas as pd
 from pathlib import Path
@@ -10,6 +10,8 @@ import seaborn as sns
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import os 
+from io import StringIO
+import tempfile
 
 from rdkit import Chem
 from rdkit.Chem import rdMolAlign
@@ -19,13 +21,11 @@ from Bio import PDB
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
 from biotite.structure.io.pdb import PDBFile
-from spyrmsd import rmsd
 from scipy.spatial.distance import cdist  
 from biotite.structure import AtomArrayStack
 from openbabel import openbabel as ob
 from openbabel import pybel
-from io import StringIO
-import tempfile
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

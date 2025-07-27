@@ -3,6 +3,15 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+
+gold/
+nohup.out
+squidly_models_27.09.2024/
+training/
+uniprot/
+
+
+
 # ---------------- data ignores
 *software
 *tmp*

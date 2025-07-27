@@ -4,7 +4,7 @@ from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
 import numpy as np
-from steps.step import Step
+from filtering_pipeline.steps.step import Step
 import re
 
 

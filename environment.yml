@@ -1,0 +1,20 @@
+name: filterpipeline
+channels:
+  - conda-forge
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+  - pytorch
+  - bioconda
+dependencies:
+  - python==3.11.8
+  - pytorch::faiss-gpu
+  - pyarrow
+  - pdbfixer
+  - foldseek
+  - mmseqs2
+  - biotite
+  - openbabel
+  - openmm
+  - fpocket
+  - pip:
+      - -e /nvme2/helen/enzyme-tk/enzymetk

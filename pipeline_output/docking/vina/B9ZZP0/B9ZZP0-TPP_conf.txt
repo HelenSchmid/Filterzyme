@@ -1,0 +1,10 @@
+receptor = pipeline_output/docking/vina/B9ZZP0/B9ZZP0.pdbqt
+ligand = pipeline_output/docking/vina/TPP/TPP.pdbqt
+center_x = 5.052000125249227
+center_y = -3.739666700363159
+center_z = -8.60366678237915
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32

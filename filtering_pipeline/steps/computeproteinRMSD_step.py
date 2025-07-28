@@ -133,9 +133,9 @@ class ProteinRMSD(Step):
 
                 entry_name = docked_structure1_name.split('_')[0]
 
-                if 'Squidly_CR_Position' in df.columns:
-                    match = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
-                    squidly_residues = match.iloc[0] if not match.empty else ""
+                mask = df[self.entry_col].str.strip() == entry_name.strip()
+                if 'Squidly_CR_Position' in df.columns and mask.any():
+                    squidly_residues = df.loc[mask, 'Squidly_CR_Position'].iat[0]
                 else:
                     squidly_residues = ""
 
@@ -149,7 +149,7 @@ class ProteinRMSD(Step):
                     'docked_structure2' : docked_structure2_name, 
                     'tool1' : tool1_name, 
                     'tool2': tool2_name,
-                    'squidly_residues': squidly_residues,
+                    'Squidly_CR_Position': squidly_residues,
                     'protein_rmsd': rmsd,   # Store the calculated RMSD value
                 })
         

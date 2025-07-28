@@ -151,7 +151,15 @@ def get_squidly_residue_atom_coords(pdb_path: str, residue_id_str: str):
     '''
     # Convert residue string IDs from 0-indexed to 1-indexed PDB format
     residue_ids_raw = residue_id_str.split('|')
-    residue_ids = [int(rid) + 1 for rid in residue_ids_raw]
+    residue_ids = []
+    for rid in residue_ids_raw:
+        rid_stripped = rid.strip()
+        if rid_stripped.lower() in ('nan', '', None):
+            continue
+        try:
+            residue_ids.append(int(rid_stripped) + 1)
+        except (ValueError, TypeError):
+            continue
 
     matching_residues = {}
 
@@ -447,10 +455,17 @@ class GeometricFiltering(Step):
             squidly_residues = str(row['Squidly_CR_Position'])
             row_result = {}
 
+            default_result = {
+                'distance_ligand_to_squidly_residues': None,
+                'distance_ligand_to_closest_nuc': None,
+                'Bürgi–Dunitz_angle_to_squidly_residue': None,
+                'Bürgi–Dunitz_angle_to_closest_nucleophile': None
+            }
+
             try:
                 # Load full PDB structure
                 pdb_file = self.preparedfiles_dir / f"{best_structure_name}.pdb"
-                print(f"Processing PDB file: {pdb_file}")
+                print(f"Processing PDB file: {pdb_file.name}")
                 protein_structure = load_pdb_structure(pdb_file)
 
                 # Extract ligand atoms from PDB
@@ -464,15 +479,6 @@ class GeometricFiltering(Step):
                 filtered_squidly_atom_coords = filter_residue_atoms(squidly_atom_coords, atom_selection)
 
                 # Compute distances between squidly predicted residues and target chemical moiety
-
-                # Default result structure
-                default_result = {
-                    'distance_ligand_to_squidly_residues': None,
-                    'distance_ligand_to_closest_nuc': None,
-                    'Bürgi–Dunitz_angle_to_squidly_residue': None,
-                    'Bürgi–Dunitz_angle_to_closest_nucleophile': None
-                }
-
                 if not ligand_coords or not isinstance(ligand_coords, dict):
                     logger.warning(f"No coordinates found that match the SMARTS pattern in {entry_name}.")
                     row_result.update(default_result)

@@ -3,9 +3,10 @@ import pandas as pd
 from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
-import numpy as np
 import re
 from io import StringIO
+from tqdm import tqdm
+import numpy as np
 
 from filtering_pipeline.steps.step import Step
 
@@ -306,18 +307,17 @@ class SuperimposeStructures(Step):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.num_threads = num_threads or 1
 
-    def __execute(self, df: pd.DataFrame, tmp_dir: str) -> list:
+    def __execute(self, df: pd.DataFrame, output_dir) -> list:
         
         all_output_paths = []
 
-        for _, row in df.iterrows():
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Superimposing structures"):
 
             entry_name = row['Entry']
             structure_1 = {}
             structure_1_ligands = {}
             structure_2 = {}
             structure_2_ligands = {}
-
             row_output_paths = []
 
             for structure_1_path in row[self.structure_1]:

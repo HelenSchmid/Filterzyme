@@ -28,7 +28,7 @@ pip install .
 ```
 
 ## :seedling: Environment Setup
-## Using conda
+### Using conda
 ```bash
 conda env create -f environment.yml
 conda activate filterpipeline

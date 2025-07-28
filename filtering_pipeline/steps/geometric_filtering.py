@@ -4,10 +4,7 @@ from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
 import numpy as np
-from steps.step import Step
 import re
-
-
 from Bio.PDB import PDBIO
 from Bio.PDB import PDBParser, Select, PDBIO
 from rdkit import Chem
@@ -17,6 +14,10 @@ from rdkit.Chem.Draw import rdMolDraw2D # You'll need this for MolDraw2DCairo/SV
 from rdkit.Chem.Draw.rdMolDraw2D import MolDrawOptions
 from rdkit import RDLogger
 import tempfile
+
+from filtering_pipeline.steps.step import Step
+
+
 
 RDLogger.DisableLog('rdApp.warning')
 

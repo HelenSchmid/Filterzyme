@@ -5,7 +5,7 @@ if __name__ == "__main__":
 
     # Configure and run
     pipeline = Pipeline(
-        df = pd.read_pickle("DEHP-MEHP.pkl").head(2),
+        df = pd.read_pickle("examples/DEHP-MEHP.pkl").head(2),
         ligand_name="TPP",
         ligand_smiles="CCCCC(CC)COC(=O)C1=CC=CC=C1C(=O)OCC(CC)CCCC",
         smarts_pattern='[$([CX3](=O)[OX2H0][#6])]',

@@ -22,8 +22,8 @@ pip install XXXX
 ```
 ### Option 2: Clone the repository
 ```bash
-git clone https://github.com/yourusername/GeometricFilters.git
-cd GeometricFilters
+git clone https://github.com/HelenSchmid/EnzymeStructuralFiltering.git
+cd EnzymeStructuralFiltering
 pip install .
 ```
 

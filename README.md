@@ -1,8 +1,6 @@
 # EnzymeStructuralFiltering
 
-
 Structural filtering pipeline using docking and active site heuristics to prioritze ML-predicted enzyme variants for experimental validation. 
-
 This tool processes superimposed ligand poses and filters them using geometric criteria such as distances, angles, and optionally, esterase-specific filters or nucleophilic proximity.
 
 ---

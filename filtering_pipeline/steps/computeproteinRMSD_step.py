@@ -117,7 +117,7 @@ class ProteinRMSD(Step):
 
         # Iterate through all subdirectories in the input directory
         for sub_dir in self.input_dir.iterdir():
-            print(f"Processing subdirectory: {sub_dir}")
+            print(f"Processing entry: {sub_dir.name}")
 
             # Process all PDB files in subdirectories
             for pdb_file_path in sub_dir.glob("*.pdb"):
@@ -132,7 +132,12 @@ class ProteinRMSD(Step):
                 docked_structure2_name = structure_names[1] if len(structure_names) > 1 else None
 
                 entry_name = docked_structure1_name.split('_')[0]
-                squidly_residues = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
+
+                if 'Squidly_CR_Position' in df.columns:
+                    match = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
+                    squidly_residues = match.iloc[0] if not match.empty else ""
+                else:
+                    squidly_residues = ""
 
                 tool1_name = get_tool_from_structure_name(docked_structure1_name)
                 tool2_name  = get_tool_from_structure_name(docked_structure2_name)
@@ -144,6 +149,7 @@ class ProteinRMSD(Step):
                     'docked_structure2' : docked_structure2_name, 
                     'tool1' : tool1_name, 
                     'tool2': tool2_name,
+                    'squidly_residues': squidly_residues,
                     'protein_rmsd': rmsd,   # Store the calculated RMSD value
                 })
         

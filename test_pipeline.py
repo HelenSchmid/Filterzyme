@@ -15,8 +15,7 @@ docking = Docking(
     squidly_dir = '/nvme2/ariane/home/data/models/squidly_final_models/'
 )
 
-docking.run()
-
+#docking.run()
 
 superimposition = Superimposition(
     ligand_name = 'TPP', 
@@ -24,4 +23,4 @@ superimposition = Superimposition(
     input_dir = 'docking_test', 
     output_dir = 'superimposition_test', 
 )
-#superimposition.run()
+superimposition.run()

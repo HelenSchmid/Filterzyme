@@ -4,23 +4,20 @@ import pandas as pd
 import logging
 import os
 
-import pandas as pd
-
 from filtering_pipeline.utils.helpers import log_section, log_subsection
-from filtering_pipeline.utils.helpers import prepare_files_for_superimposition
 from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
 from filtering_pipeline.steps.save_step import Save
+from filtering_pipeline.steps.preparevina_step import PrepareVina
+from filtering_pipeline.steps.preparechai_step import PrepareChai
+from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
 from filtering_pipeline.steps.superimposestructures_step import SuperimposeStructures
 from filtering_pipeline.steps.computeproteinRMSD_step import ProteinRMSD
 from filtering_pipeline.steps.computeligandRMSD_step import LigandRMSD
 from filtering_pipeline.steps.geometric_filtering import GeometricFiltering
 
-
 from enzymetk.dock_chai_step import Chai
 from enzymetk.dock_boltz_step import Boltz
 from enzymetk.dock_vina_step import Vina
-
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -95,7 +92,7 @@ class Docking:
 
     def _run_vina(self, df_boltz):
         log_subsection("Docking using Vina")
-        vina_dir = Path(self.output_dir) /'vina/'
+        vina_dir = Path(self.output_dir) / 'vina/' 
         vina_dir.mkdir(exist_ok=True, parents=True)
         df_boltz['structure'] = None # or path to AF structure
         df_boltz['substrate_name'] = self.ligand_name
@@ -113,15 +110,16 @@ class Superimposition:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
-
     def run(self):
         
         log_subsection('Extracting docking quality metrics')
-        self._extract_docking_metrics()
-        df_super = log_subsection('Superimposing docked structures')
-        self._superimposition()
-        log_subsection('Calculating protein and ligand RMSDs')
-        df_proteinRMSD = self._proteinRMSD(df_super)
+        #self._extract_docking_metrics()
+        log_subsection('Superimposing docked structures')
+        df_sup = self._prepare_files_for_superimposition()
+        self._superimposition(df_sup)
+        log_subsection('Calculating protein RMSDs')
+        df_proteinRMSD = self._proteinRMSD(df_sup)
+        log_subsection('Calculating ligand RMSDs')
         self._ligandRMSD(df_proteinRMSD)
 
 
@@ -129,16 +127,19 @@ class Superimposition:
         # TODO: process your vina/chai pickle files
         pass
 
-    def _superimposition(self):              
-        prepare_files_for_superimposition(
-        df_vina=Path(self.input_dir) / 'vina.pkl',
-        df_chai=Path(self.input_dir) / 'chai.pkl',
-        ligand_name=self.ligand_name,
-        output_dir=Path(self.output_dir) / 'preparedfiles_for_superimposition'
-        )
-        
+
+    def _prepare_files_for_superimposition(self):
+        df_vina = pd.read_pickle(Path(self.input_dir) / 'vina.pkl')
+        preparedfiles_dir = Path(self.output_dir) / 'preparedfiles_for_superimposition/'
+
+        df_vina << (PrepareVina('output_dir', self.ligand_name,  preparedfiles_dir) 
+                >> PrepareChai('chai_dir', preparedfiles_dir, 1) 
+                >> PrepareBoltz('boltz_dir' , preparedfiles_dir, 1))
+        return df_vina
+
+    def _superimposition(self,  df):                   
         output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
-        df = pd.read_pickle('/nvme2/helen/EnzymeStructuralFiltering/superimposition_test/df_for_superimposition')
+        #f = pd.read_pickle('/nvme2/helen/EnzymeStructuralFiltering/superimposition_test/df_for_superimposition')
         df_sup = df << (SuperimposeStructures('vina_files_for_superimposition',  'chai_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='chai', num_threads = self.num_threads) 
                 >> SuperimposeStructures('vina_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='boltz', num_threads = self.num_threads) 
                 >> SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='chai', name2='boltz', num_threads = self.num_threads)
@@ -148,16 +149,15 @@ class Superimposition:
     def _proteinRMSD(self, df):  
         proteinRMSD_dir = Path(self.output_dir) / 'proteinRMSD'
         proteinRMSD_dir.mkdir(exist_ok=True, parents=True) 
-        input_dir = output_dir=Path(self.output_dir) / 'preparedfiles_for_superimposition'
+        input_dir = Path(self.output_dir) / 'superimposed_structures'
         df_proteinRMSD = df << (ProteinRMSD('Entry', input_dir = input_dir, output_dir = proteinRMSD_dir, visualize_heatmaps = True)  >> Save(Path(self.output_dir)/'proteinRMSD.pkl'))
         return df_proteinRMSD
 
     def _ligandRMSD(self, df): 
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
-        df << (LigandRMSD('Entry', input_dir = self.output_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches)  >> Save(Path(self.output_dir)/'ligandrmsd.pkl'))
-
-
+        input_dir = Path(self.output_dir) / 'superimposed_structures'
+        df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches)  >> Save(Path(self.output_dir)/'ligandrmsd.pkl'))
 
 
 

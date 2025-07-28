@@ -1,5 +1,3 @@
-from filtering_pipeline.steps.step import Step
-
 import pandas as pd
 from pathlib import Path
 import logging
@@ -10,6 +8,9 @@ import seaborn as sns
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import os 
+
+from filtering_pipeline.steps.step import Step
+from filtering_pipeline.utils.helpers import clean_plt
 
 from rdkit import Chem
 from rdkit.Chem import rdMolAlign
@@ -36,16 +37,6 @@ plt.rcParams['figure.figsize'] = (3,3)
 sns.set(rc={'figure.figsize': (3,3), 'font.family': 'sans-serif', 'font.sans-serif': 'DejaVu Sans', 'font.size': 12}, 
         style='ticks')
 
-def clean_plt(ax):
-    ax.tick_params(direction='out', length=2, width=1.0)
-    ax.spines['bottom'].set_linewidth(1.0)
-    ax.spines['top'].set_linewidth(0)
-    ax.spines['left'].set_linewidth(1.0)
-    ax.spines['right'].set_linewidth(0)
-    ax.tick_params(labelsize=10.0)
-    ax.tick_params(axis='x', which='major', pad=2.0)
-    ax.tick_params(axis='y', which='major', pad=2.0)
-    return ax
 
 def get_hetatm_chain_ids(pdb_path):
     with open(pdb_path, "r") as f:
@@ -206,7 +197,7 @@ class LigandRMSD(Step):
 
         # Iterate through all subdirectories in the input directory
         for sub_dir in self.input_dir.iterdir():
-            print(f"Processing subdirectory: {sub_dir}")
+            print(f"Processing entry: {sub_dir.name}")
 
             # Process all PDB files in subdirectories
             for pdb_file_path in sub_dir.glob("*.pdb"):
@@ -247,7 +238,11 @@ class LigandRMSD(Step):
                 docked_structure1_name = structure_names[0] if len(structure_names) > 0 else None
                 docked_structure2_name = structure_names[1] if len(structure_names) > 1 else None
 
-                squidly_residues = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
+                if 'Squidly_CR_Position' in df.columns:
+                    squidly_residues = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
+                else:
+                    squidly_residues = pd.Series(dtype=object)
+
 
                 tool1_name = get_tool_from_structure_name(docked_structure1_name)
                 tool2_name  = get_tool_from_structure_name(docked_structure2_name)

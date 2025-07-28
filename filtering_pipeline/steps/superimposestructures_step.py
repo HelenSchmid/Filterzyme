@@ -4,10 +4,12 @@ from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
 import numpy as np
-from steps.step import Step
 import re
-
 from io import StringIO
+
+from filtering_pipeline.steps.step import Step
+
+
 import biotite.database.rcsb as rcsb
 import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx

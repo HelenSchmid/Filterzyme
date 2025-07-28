@@ -2,12 +2,13 @@ import os
 import sys
 import pandas as pd
 import logging
+from pathlib import Path
 
-from ..steps.step import Step
-from ..steps.save_step import Save
-from ..steps.preparevina_step import PrepareVina
-from ..steps.preparechai_step import PrepareChai
-from ..steps.prepareboltz_step import PrepareBoltz
+from filtering_pipeline.steps.step import Step
+from filtering_pipeline.steps.save_step import Save
+from filtering_pipeline.steps.preparevina_step import PrepareVina
+from filtering_pipeline.steps.preparechai_step import PrepareChai
+from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
 
 
 logger = logging.getLogger(__name__)
@@ -18,25 +19,44 @@ logging.basicConfig(
 )
 
 
-def log_section(title: str):
+def clean_plt(ax):
+    ax.tick_params(direction='out', length=2, width=1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
+    ax.spines['top'].set_linewidth(0)
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['right'].set_linewidth(0)
+    ax.tick_params(labelsize=10.0)
+    ax.tick_params(axis='x', which='major', pad=2.0)
+    ax.tick_params(axis='y', which='major', pad=2.0)
+    return ax
+
+
+def log_subsection(title: str):
     border = "#" * 60
     logger.info(f"\n{border}")
-    logger.info(f"### {title.center(54)} ###")
+    logger.info(f"### {title.upper().center(52)} ###")
     logger.info(f"{border}\n")
 
 
-def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl', ligand_name: str = '', output_dir = 'preparedfiles_for_superimposition/'):
+def log_section(title: str):
+    border = "#" * 60
+    logger.info(f"\n{border}")
+    logger.info(f"### {title.center(52)} ###")
+    logger.info(f"{border}\n")
+
+
+def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl', ligand_name: str = '', output_dir = str):
     '''
     Format output files of the various docking tools into coherent format to use as input for superimposing them onto each other. 
     Output: Dataframe combining all the paths to the prepared PDB files. 
     '''
     # Prepare vina files
     df_vina = pd.read_pickle(df_vina)
-    df_vina << (PrepareVina('output_dir', ligand_name,  output_dir) >> Save('preparedfiles_vina.pkl'))
+    prepared_vina = df_vina << (PrepareVina('output_dir', ligand_name,  output_dir) >> Save('preparedfiles_vina.pkl'))
 
     # Prepare chai files
     df_chai = pd.read_pickle(df_chai)
-    df_chai << (PrepareChai('output_dir', output_dir, 1) >> Save('preparedfiles_chai.pkl'))
+    prepared_chai = df_chai << (PrepareChai('output_dir', output_dir, 1) >> Save('preparedfiles_chai.pkl'))
 
     # Prepare boltz files
     df_boltz = df_vina.copy()
@@ -47,19 +67,15 @@ def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl'
     df_boltz = df_boltz[df_boltz['boltz_dir'].notna()]
     df_boltz = df_boltz[df_boltz['boltz_dir'].apply(lambda x: isinstance(x, (str, Path)))]
 
-    df_boltz << (PrepareBoltz('boltz_dir' , output_dir, 1) >> Save('preparedfiles_boltz.pkl'))
+    prepared_boltz = df_boltz << (PrepareBoltz('output_dir' , output_dir, 1) >> Save('preparedfiles_boltz.pkl'))
 
     # Combine prepared dataframes
-    df_chai = pd.read_pickle('preparedfiles_chai.pkl') 
-    df_vina = pd.read_pickle('preparedfiles_vina.pkl')
-    df_boltz = pd.read_pickle('preparedfiles_boltz.pkl')
-
-    df_combined = df_vina.merge(
-        df_chai[['Entry', 'chai_files_for_superimposition']],
+    df_combined = prepared_vina.merge(
+        prepared_chai[['Entry', 'chai_files_for_superimposition']],
         on='Entry',
         how='left'  
     ).merge(
-        df_boltz[['Entry', 'boltz_files_for_superimposition']],
+        prepared_boltz[['Entry', 'boltz_files_for_superimposition']],
         on='Entry',
         how='left'  
     )
@@ -71,5 +87,5 @@ def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl'
         df_combined['chai_files_for_superimposition'].apply(lambda x: isinstance(x, list))
     ]
 
-    df.to_pickle('df_for_superimposition')
+    df.to_pickle(Path(output_dir).parent /'df_for_superimposition')
 

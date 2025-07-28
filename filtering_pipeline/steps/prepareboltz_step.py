@@ -7,7 +7,7 @@ import re
 from tempfile import TemporaryDirectory
 from multiprocessing.dummy import Pool as ThreadPool
 
-from .step import Step
+from filtering_pipeline.steps.step import Step
 
 
 from Bio.PDB import MMCIFParser

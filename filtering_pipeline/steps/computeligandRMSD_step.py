@@ -1,4 +1,4 @@
-from steps.step import Step
+from filtering_pipeline.steps.step import Step
 
 import pandas as pd
 from pathlib import Path
@@ -19,7 +19,6 @@ from Bio import PDB
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
 from biotite.structure.io.pdb import PDBFile
-from spyrmsd import rmsd
 from scipy.spatial.distance import cdist  
 from biotite.structure import AtomArrayStack
 from openbabel import openbabel as ob

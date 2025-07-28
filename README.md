@@ -18,7 +18,7 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ### Option 1: Install via pip
 ```bash
-pip install git+https://github.com/yourusername/GeometricFilters.git
+pip install XXXX
 ```
 ### Option 2: Clone the repository
 ```bash

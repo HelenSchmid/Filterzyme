@@ -1,4 +1,3 @@
-from steps.step import Step
 import pandas as pd
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -7,31 +6,15 @@ import numpy as np
 from multiprocessing.dummy import Pool as ThreadPool
 import os
 import subprocess
-
 import shutil
 import uuid
 import re
 
+from filtering_pipeline.steps.step import Step
+
 # How to run fpocket in terminal: fpocket -f /home/helen/cec_degrader/generalize/alphafold_structures/A1RRK1_structure.pdb
 # -r string: (None) This parameter allows you to run fpocket in a restricted mode. Let's suppose you have a very shallow or large pocket with a ligand inside and the automatic pocket prediction always splits up you pocket or you have only a part of the pocket found. Specifying your ligand residue with -r allows you to detect and characterize you ligand binding site explicitly. 
 # For instance for `1UYD.pdb` you can specify `-r 1224:PU8:A` (residue number of the ligand: residue name of the ligand: chain of the ligand)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-
-
-from steps.step import Step
-import pandas as pd
-from tempfile import TemporaryDirectory
-from pathlib import Path
-import logging
-import numpy as np # Keep if potentially used elsewhere, otherwise can remove
-from multiprocessing.dummy import Pool as ThreadPool
-import os
-import subprocess
-import shutil
-import re
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -210,7 +193,7 @@ class Fpocket(Step):
                 logger.error(f"Error copying PDB file {pdb_file_path} to {temp_pdb_path}: {e}")
                 return pd.Series(row_results, index=row_results.keys())
 
-            logger.info(f"Running fpocket on {temp_pdb_path} in {temp_dir}")
+            logger.info(f"Running fpocket on {temp_pdb_path.name}")
             
             # fpocket command
             fpocket_cmd = ["fpocket", "-f", str(temp_pdb_path), "-r", "1:LIG:B"]

@@ -39,7 +39,7 @@ class ActiveSitePred(Step):
         input_filename = self.__to_fasta(df, tmp_dir)
         # Might have an issue if the things are not correctly installed in the same dicrectory 
         result = subprocess.run(['python', Path(__file__).parent/'predict_catalyticsite_run.py', '--out', str(tmp_dir), 
-                                '--input', input_filename, '--squidly_dir', self.squidly_dir, '--esm2_model', self.esm2_model], capture_output=True, text=True)
+                                '--input', input_filename, '--squidly_dir', f'{self.squidly_dir}/', '--esm2_model', self.esm2_model], capture_output=True, text=True)
         output_filename = f'{input_filename.replace(".fasta", "_results.pkl")}'
         if result.stderr:
             logger.error(result.stderr)

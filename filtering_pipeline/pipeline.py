@@ -95,7 +95,7 @@ class Docking:
 
     def _run_vina(self, df_boltz):
         log_subsection("Docking using Vina")
-        vina_dir = Path(self.output_dir) /'vina'
+        vina_dir = Path(self.output_dir) /'vina/'
         vina_dir.mkdir(exist_ok=True, parents=True)
         df_boltz['structure'] = None # or path to AF structure
         df_boltz['substrate_name'] = self.ligand_name
@@ -137,10 +137,11 @@ class Superimposition:
         output_dir=Path(self.output_dir) / 'preparedfiles_for_superimposition'
         )
         
-        df = pd.DataFrame()
-        df_sup = df << (SuperimposeStructures('vina_files_for_superimposition',  'chai_files_for_superimposition',  output_dir = self.output_dir, name1='vina', name2='chai', num_threads = self.num_threads) 
-                >> SuperimposeStructures('vina_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = self.output_dir, name1='vina', name2='boltz', num_threads = self.num_threads) 
-                >> SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = self.output_dir, name1='chai', name2='boltz', num_threads = self.num_threads)
+        output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
+        df = pd.read_pickle('/nvme2/helen/EnzymeStructuralFiltering/superimposition_test/df_for_superimposition')
+        df_sup = df << (SuperimposeStructures('vina_files_for_superimposition',  'chai_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='chai', num_threads = self.num_threads) 
+                >> SuperimposeStructures('vina_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='boltz', num_threads = self.num_threads) 
+                >> SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='chai', name2='boltz', num_threads = self.num_threads)
                 >> Save(Path(self.output_dir) / 'superimposedstructures.pkl'))
         return df_sup
     

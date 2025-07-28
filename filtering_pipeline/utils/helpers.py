@@ -87,5 +87,5 @@ def prepare_files_for_superimposition(df_vina = 'vina.pkl', df_chai = 'chai.pkl'
         df_combined['chai_files_for_superimposition'].apply(lambda x: isinstance(x, list))
     ]
 
-    df.to_pickle(Path(output_dir).parent /'df_for_superimposition')
+    df.to_pickle(Path(output_dir).parent /'df_for_superimposition.pkl')
 

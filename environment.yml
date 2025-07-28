@@ -17,4 +17,5 @@ dependencies:
   - openmm
   - fpocket
   - pip:
-      - -e /nvme2/helen/enzyme-tk/enzymetk
+    - -e /nvme2/helen/enzyme-tk/enzymetk
+    - filtering_pipeline

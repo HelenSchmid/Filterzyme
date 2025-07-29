@@ -16,6 +16,7 @@ dependencies:
   - openbabel
   - openmm
   - fpocket
+  - pip
   - pip:
     - -e /nvme2/helen/enzyme-tk/enzymetk
     - filtering_pipeline

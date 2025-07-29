@@ -60,7 +60,9 @@ class Docking:
         df_chai = self._run_chai(df_squidly)
         df_boltz= self._run_boltz(df_chai)
         df_vina = self._run_vina(df_boltz)
-        print(df_vina)
+        log_subsection('Extracting docking quality metrics')
+        df_metrics = self._extract_docking_metrics(df_vina)
+        print(df_metrics)
 
         #save_dataframe(self.state["df"], self.output_dir / "final_output.pkl")
 
@@ -102,6 +104,9 @@ class Docking:
         df_vina.rename(columns = {'output_dir':'vina_dir'}, inplace=True)
         return df_vina
    
+    def _extract_docking_quality_metrics(self):
+        pass 
+
 
 class Superimposition:
     def __init__(self, ligand_name: str, maxMatches, input_dir="pipeline_output", output_dir="pipeline_output", num_threads=1):
@@ -115,8 +120,6 @@ class Superimposition:
     def run(self):
         
         log_section('Superimposition')
-        log_subsection('Extracting docking quality metrics')
-        #self._extract_docking_metrics()
         log_subsection('Superimposing docked structures')
         df_sup = self._prepare_files_for_superimposition()
         self._superimposition(df_sup)
@@ -125,11 +128,6 @@ class Superimposition:
         log_subsection('Calculating ligand RMSDs')
         df_ligandRMSD = self._ligandRMSD(df_proteinRMSD)
         return df_ligandRMSD
-
-
-    def _extract_docking_metrics(self):
-        # TODO: process your vina/chai pickle files
-        pass
 
 
     def _prepare_files_for_superimposition(self):
@@ -143,7 +141,6 @@ class Superimposition:
 
     def _superimposition(self,  df):                   
         output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
-        #f = pd.read_pickle('/nvme2/helen/EnzymeStructuralFiltering/superimposition_test/df_for_superimposition')
         df_sup = df << (SuperimposeStructures('vina_files_for_superimposition',  'chai_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='chai', num_threads = self.num_threads) 
                 >> SuperimposeStructures('vina_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='boltz', num_threads = self.num_threads) 
                 >> SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='chai', name2='boltz', num_threads = self.num_threads)

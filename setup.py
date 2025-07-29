@@ -14,7 +14,7 @@ def readme():
         return f.read()
 
 
-setup(name='filtering_pipeline',
+setup(name='enzyme_filtering_pipeline',
       version=read_version(),
       description='',
       long_description=readme(),

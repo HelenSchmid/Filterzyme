@@ -148,7 +148,7 @@ class DockingMetrics(Step):
             ligand_name = row['substrate_name']
 
             # ---Extract vina docking metrics---
-            vina_dir = Path(row['output_dir']).parent
+            vina_dir = Path(row['vina_dir']).parent
             vina_metrics = extract_docking_metrics_vina(vina_dir, entry_name, ligand_name)
             row_result = {'vina_affinities': vina_metrics if vina_metrics else {}}
             results.append(row_result)

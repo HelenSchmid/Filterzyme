@@ -7,6 +7,7 @@ import os
 from filtering_pipeline.utils.helpers import log_section, log_subsection
 from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
 from filtering_pipeline.steps.save_step import Save
+from filtering_pipeline.steps.extract_docking_metrics_step import DockingMetrics
 from filtering_pipeline.steps.preparevina_step import PrepareVina
 from filtering_pipeline.steps.preparechai_step import PrepareChai
 from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
@@ -15,6 +16,7 @@ from filtering_pipeline.steps.computeproteinRMSD_step import ProteinRMSD
 from filtering_pipeline.steps.computeligandRMSD_step import LigandRMSD
 from filtering_pipeline.steps.geometric_filtering import GeometricFiltering
 from filtering_pipeline.steps.fpocket_step import Fpocket
+from filtering_pipeline.steps.ligandSASA_step import LigandSASA
 
 from enzymetk.dock_chai_step import Chai
 from enzymetk.dock_boltz_step import Boltz
@@ -61,7 +63,7 @@ class Docking:
         df_boltz= self._run_boltz(df_chai)
         df_vina = self._run_vina(df_boltz)
         log_subsection('Extracting docking quality metrics')
-        df_metrics = self._extract_docking_metrics(df_vina)
+        df_metrics = self._extract_docking_quality_metrics(df_vina)
         print(df_metrics)
 
         #save_dataframe(self.state["df"], self.output_dir / "final_output.pkl")
@@ -104,8 +106,11 @@ class Docking:
         df_vina.rename(columns = {'output_dir':'vina_dir'}, inplace=True)
         return df_vina
    
-    def _extract_docking_quality_metrics(self):
-        pass 
+    def _extract_docking_quality_metrics(self, df):
+        log_subsection('Extracting docking quality metrics')
+        df_metrics = df << (DockingMetrics(input_dir = Path(self.output_dir), output_dir = Path(self.output_dir)) 
+                        >> Save(Path(self.output_dir) / 'dockingmetrics.pkl'))
+        return df_metrics
 
 
 class Superimposition:
@@ -182,7 +187,10 @@ class GeometricFilters:
         log_subsection('Calculate catalytic residue - ligand distances')
         df_filter = self._run_geometric_filtering()
         log_subsection('Calculate active site volume')
-        self._active_site_volume(df_filter)
+        df_ASvolume = self._active_site_volume(df_filter)
+        log_subsection('Calculate ligand surface exposure')
+        df_final = self._ligand_surface_exposure(df_ASvolume)
+        return df_final
 
     def _run_geometric_filtering(self):
         df_geo_filter = self.df << (GeometricFiltering(
@@ -199,12 +207,17 @@ class GeometricFilters:
     def _active_site_volume(self, df):
         fpocket_dir = Path(self.output_dir) / 'ASVolume'
         fpocket_dir.mkdir(exist_ok=True, parents=True)
-        df << (Fpocket(preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition', output_dir = fpocket_dir)  
+        df_ASVolume = df << (Fpocket(preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition', output_dir = fpocket_dir)  
             >> Save(Path(self.output_dir) / 'ASVolume.pkl'))
+        return df_ASVolume
 
-    def _ligand_surface_exposure(self):
-        # TODO: Implement step
-        pass
+    def _ligand_surface_exposure(self, df):
+        ligandSASA_dir = Path(self.output_dir) / 'LigandSASA'
+        ligandSASA_dir.mkdir(exist_ok=True, parents=True)
+        df_ligandSASA = df << (LigandSASA(input_dir = Path(self.input_dir)/ 'preparedfiles_for_superimposition', output_dir = ligandSASA_dir)
+                            >> Save(Path(self.output_dir) / 'LigandSASA.pkl'))
+        return df_ligandSASA
+
 
 
 class Pipeline:

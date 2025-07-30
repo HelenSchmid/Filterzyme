@@ -4,7 +4,7 @@ from filtering_pipeline.pipeline import Docking
 from filtering_pipeline.pipeline import Superimposition
 from filtering_pipeline.pipeline import GeometricFilters
 
-df = pd.read_pickle('DEHP-MEHP.pkl')
+df = pd.read_pickle('examples/DEHP-MEHP.pkl')
 df = df.drop_duplicates(subset='Entry', keep='first')
 df = df.head(2)
 

@@ -8,6 +8,7 @@ import seaborn as sns
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import os 
+from collections import defaultdict
 
 from filtering_pipeline.steps.step import Step
 from filtering_pipeline.utils.helpers import clean_plt
@@ -127,6 +128,22 @@ def get_tool_from_structure_name(structure_name: str) -> str:
         return structure_name.split('_')[-1]
     return "UNKNOWN_tool" # Fallback if format doesn't match
 
+
+
+
+'''
+1. Weighted Inter-Tool Average RMSD (already implemented)
+- For each pose, compute the average RMSD to all poses from each other tool
+- Weight each tool by the number of poses it contributes
+- Select the pose with the lowest weighted average RMSD
+
+2. Closest Pose Per Other Tool (Tool Min-RMSD)
+- For each pose, find the single most similar pose (lowest RMSD) from each other tool
+- Take the average of these lowest RMSDs
+- Select the pose with the lowest average across other tools
+'''
+
+
 def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
     """
     For each Entry, selects the best docked structure for each tool. Defined as structure with the lowest 
@@ -181,6 +198,137 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
     best_df = pd.DataFrame(best_structures)
 
     return best_df
+
+
+
+def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Selects the best overall docked structure per Entry using two methods:
+    
+    1. inter_tool_weighted_avg: Weighted average RMSD to all structures from other tools,
+       weighted by number of structures each tool contributes.
+       
+    2. inter_tool_min_per_tool: Average of *minimum* RMSDs to each other tool
+       (one closest structure per tool).
+
+    3. vina_avg_intra_tool: Best structure among all vina generated structures based on
+       lowest average RMSD to other Vina poses.
+       
+    Returns a DataFrame with one row per method per Entry.
+    """
+    best_structures = []
+
+    for entry, entry_df in rmsd_df.groupby("Entry"):
+        # Build structure -> tool mapping
+        structure_to_tool = {}
+        all_structures = pd.unique(entry_df[['docked_structure1', 'docked_structure2']].values.ravel('K'))
+
+        for _, row in entry_df.iterrows():
+            structure_to_tool[row['docked_structure1']] = row['tool1']
+            structure_to_tool[row['docked_structure2']] = row['tool2']
+
+        tools = set(structure_to_tool.values())
+
+        # Build RMSD matrix
+        rmsd_matrix = pd.DataFrame(np.nan, index=all_structures, columns=all_structures)
+        for _, row in entry_df.iterrows():
+            s1, s2 = row['docked_structure1'], row['docked_structure2']
+            rmsd_matrix.loc[s1, s2] = row['ligand_rmsd']
+            rmsd_matrix.loc[s2, s1] = row['ligand_rmsd']
+        np.fill_diagonal(rmsd_matrix.values, 0)
+
+        # Group structures by tool
+        tool_to_structures = defaultdict(list)
+        for s, t in structure_to_tool.items():
+            tool_to_structures[t].append(s)
+
+        squidly_pos = entry_df['Squidly_CR_Position'].iloc[0] if 'Squidly_CR_Position' in entry_df.columns else None
+
+        # ----- Method 1: Weighted average RMSD to all poses per other tool -----
+        weighted_rmsd_scores = {}
+        for s in rmsd_matrix.index:
+            tool_s = structure_to_tool[s]
+            weighted_sum = 0.0
+            total_weight = 0
+
+            for other_tool, other_structures in tool_to_structures.items():
+                if other_tool == tool_s:
+                    continue
+
+                values = rmsd_matrix.loc[s, other_structures].dropna()
+                if values.empty:
+                    continue
+
+                weight = len(other_structures)
+                avg_rmsd = values.mean()
+
+                weighted_sum += weight * avg_rmsd
+                total_weight += weight
+
+            if total_weight > 0:
+                weighted_rmsd_scores[s] = weighted_sum / total_weight
+
+        if weighted_rmsd_scores:
+            best_s = min(weighted_rmsd_scores, key=weighted_rmsd_scores.get)
+            best_structures.append({
+                'Entry': entry,
+                'tool': structure_to_tool[best_s],
+                'best_structure': best_s,
+                'avg_rmsd': weighted_rmsd_scores[best_s],
+                'method': 'inter_tool_weighted_avg',
+                'Squidly_CR_Position': squidly_pos
+            })
+
+        # ----- Method 2: Average of closest pose per tool -----
+        closest_rmsd_scores = {}
+        for s in rmsd_matrix.index:
+            tool_s = structure_to_tool[s]
+            closest_sum = 0.0
+            tool_count = 0
+
+            for other_tool, other_structures in tool_to_structures.items():
+                if other_tool == tool_s:
+                    continue
+
+                values = rmsd_matrix.loc[s, other_structures].dropna()
+                if values.empty:
+                    continue
+
+                closest_sum += values.min()
+                tool_count += 1
+
+            if tool_count > 0:
+                closest_rmsd_scores[s] = closest_sum / tool_count
+
+        if closest_rmsd_scores:
+            best_s = min(closest_rmsd_scores, key=closest_rmsd_scores.get)
+            best_structures.append({
+                'Entry': entry,
+                'tool': structure_to_tool[best_s],
+                'best_structure': best_s,
+                'avg_rmsd': closest_rmsd_scores[best_s],
+                'method': 'inter_tool_min_per_tool',
+                'Squidly_CR_Position': squidly_pos
+            })
+
+        # ----- Method 3: Intra-tool average RMSD within Vina structures -----
+        vina_structures = tool_to_structures.get('vina', [])
+        if len(vina_structures) >= 2:
+            vina_matrix = rmsd_matrix.loc[vina_structures, vina_structures]
+            avg_rmsd_vina = vina_matrix.mean(axis=1).dropna()
+
+            if not avg_rmsd_vina.empty:
+                best_vina = avg_rmsd_vina.idxmin()
+                best_structures.append({
+                    'Entry': entry,
+                    'tool': 'vina',
+                    'best_structure': best_vina,
+                    'avg_rmsd': avg_rmsd_vina[best_vina],
+                    'method': 'vina_avg_intra_tool',
+                    'Squidly_CR_Position': squidly_pos
+                })
+
+    return pd.DataFrame(best_structures)
 
 class LigandRMSD(Step):
     def __init__(self, entry_col = 'Entry', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 

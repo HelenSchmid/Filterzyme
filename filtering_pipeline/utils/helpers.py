@@ -13,7 +13,7 @@ logging.basicConfig(
     format='%(message)s'
 )
 
-
+# Define plotting aesthetics 
 def clean_plt(ax):
     ax.tick_params(direction='out', length=2, width=1.0)
     ax.spines['bottom'].set_linewidth(1.0)
@@ -25,19 +25,34 @@ def clean_plt(ax):
     ax.tick_params(axis='y', which='major', pad=2.0)
     return ax
 
+# Define logging titles
+def log_section(title: str):
+    border = "#" * 60
+    logger.info(f"\n{border}")
+    logger.info(f"### {title.upper().center(52)} ###")
+    logger.info(f"{border}\n")
 
+# Define logging subtitles
 def log_subsection(title: str):
     border = "#" * 60
     logger.info(f"\n{border}")
     logger.info(f"### {title.center(52)} ###")
     logger.info(f"{border}\n")
 
+def log_boxed_note(text):
+    border = "-" * (len(text) + 8)
+    print(f"\n{border}\n|   {text}   |\n{border}\n")
 
-def log_section(title: str):
-    border = "#" * 60
-    logger.info(f"\n{border}")
-    logger.info(f"### {title.upper().center(52)} ###")
-    logger.info(f"{border}\n")
+def generate_boltz_structure_path(input_path):
+    """
+    Generate the structure file path of Boltz structure based on boltz output directory.
+    """
+    base_path = Path(input_path)
+    base_name = base_path.name  
+    new_path = base_path / f"{base_name}_results_{base_name}" / "predictions" / base_name / f"{base_name}_model_0.cif"
+    print(new_path)
+
+    return new_path
 
 
 class LigandSelect(Select):

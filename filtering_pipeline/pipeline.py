@@ -256,13 +256,13 @@ class GeometricFilters:
         fpocket_dir = Path(self.output_dir) / 'ASVolume'
         fpocket_dir.mkdir(exist_ok=True, parents=True)
         df_ASVolume = df << (Fpocket(preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition', output_dir = fpocket_dir)  
-            >> Save(Path(self.output_dir) / 'ASVolume.pkl'))
+            >> Save(Path(self.output_dir) / 'ASvolume.pkl'))
         return df_ASVolume
 
     def _ligand_surface_exposure(self, df):
         ligandSASA_dir = Path(self.output_dir) / 'LigandSASA'
         df_ligandSASA = df << (LigandSASA(input_dir = Path(self.input_dir)/ 'preparedfiles_for_superimposition', output_dir = ligandSASA_dir)
-                            >> Save(Path(self.output_dir) / 'LigandSASA.pkl'))
+                            >> Save(Path(self.output_dir) / 'ligandSASA.pkl'))
         return df_ligandSASA
     
     def _plip_interactions(self, df):

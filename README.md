@@ -5,7 +5,7 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ---
 
-## 🚀 Features
+## Features
 
 - Analysis of enzyme-ligand docking using multiple docking tools (ML- and physics-based).
 - Optional esterase or nucleophile-focused analysis.
@@ -14,7 +14,7 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Option 1: Install via pip
 ```bash
@@ -27,14 +27,14 @@ cd EnzymeStructuralFiltering
 pip install .
 ```
 
-## :seedling: Environment Setup
+## Environment Setup
 ### Using conda
 ```bash
 conda env create -f environment.yml
 conda activate filterpipeline
 ```
 
-## 🔧 Usage Example
+## Usage Example
 ```python
 from filtering_pipeline.pipeline import Pipeline
 import pandas as pd

@@ -55,6 +55,24 @@ def generate_boltz_structure_path(input_path):
     return new_path
 
 
+
+class suppress_stdout_stderr:
+    def __enter__(self):
+        # Open a null file
+        self.devnull = open(os.devnull, 'w')
+        self.old_stdout = os.dup(1)
+        self.old_stderr = os.dup(2)
+        os.dup2(self.devnull.fileno(), 1)
+        os.dup2(self.devnull.fileno(), 2)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        os.dup2(self.old_stdout, 1)
+        os.dup2(self.old_stderr, 2)
+        os.close(self.old_stdout)
+        os.close(self.old_stderr)
+        self.devnull.close()
+
+
 class LigandSelect(Select):
     def __init__(self, ligand_resname):
         self.ligand_resname = ligand_resname

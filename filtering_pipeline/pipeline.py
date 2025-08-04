@@ -174,6 +174,8 @@ class Superimposition:
         df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches)  
                             >> Save(Path(self.output_dir)/'ligandRMSD.pkl'))
         return df_ligandRMSD
+    
+    
 
 class GeometricFilters:
     def __init__(self, substrate_smiles: str, smarts_pattern: str, df, esterase = 0, find_closest_nuc = 0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
@@ -215,14 +217,14 @@ class GeometricFilters:
         fpocket_dir = Path(self.output_dir) / 'ASVolume'
         fpocket_dir.mkdir(exist_ok=True, parents=True)
         df_ASVolume = df << (Fpocket(preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition', output_dir = fpocket_dir)  
-            >> Save(Path(self.output_dir) / 'ASVolume.pkl'))
+            >> Save(Path(self.output_dir) / 'ASvolume.pkl'))
         return df_ASVolume
 
     def _ligand_surface_exposure(self, df):
         ligandSASA_dir = Path(self.output_dir) / 'LigandSASA'
         ligandSASA_dir.mkdir(exist_ok=True, parents=True)
         df_ligandSASA = df << (LigandSASA(input_dir = Path(self.input_dir)/ 'preparedfiles_for_superimposition', output_dir = ligandSASA_dir)
-                            >> Save(Path(self.output_dir) / 'LigandSASA.pkl'))
+                            >> Save(Path(self.output_dir) / 'ligandSASA.pkl'))
         return df_ligandSASA
 
 

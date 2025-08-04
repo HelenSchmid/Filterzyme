@@ -5,7 +5,7 @@ import logging
 import os
 
 from filtering_pipeline.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path
-from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs, suppress_stdout
+from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs
 from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
 from filtering_pipeline.steps.save_step import Save
 from filtering_pipeline.steps.extract_docking_metrics_step import DockingMetrics

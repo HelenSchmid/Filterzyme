@@ -54,6 +54,28 @@ def generate_boltz_structure_path(input_path):
 
     return new_path
 
+def clean_protein_sequence(seq: str) -> str:
+    """
+    Cleans a protein sequence by:
+    - Removing stop codons (*)
+    - Removing whitespace or newline characters
+    - Ensuring only valid amino acid letters remain (A-Z except B, J, O, U, X, Z)
+    """
+    if pd.isna(seq):
+        return None
+    seq = seq.upper()
+    seq = re.sub(r'[^ACDEFGHIKLMNPQRSTVWY]', '', seq)  # Keep only standard 20 amino acids
+    return seq
+
+
+def delete_empty_subdirs(directory):
+    '''Delete empty subdirectories'''
+    directory = Path(directory)
+    for subdir in directory.iterdir():
+        if subdir.is_dir() and not any(subdir.iterdir()):
+            subdir.rmdir()
+            print(f"Deleted empty directory: {subdir}")
+
 
 
 class suppress_stdout_stderr:

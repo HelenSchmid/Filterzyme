@@ -14,7 +14,7 @@ if __name__ == "__main__":
         find_closest_nuc=1,
         num_threads=1,
         metagenomic_enzymes=1,
-        squidly_dir='/nvme2/ariane/home/data/models/squidly_final_models/',
+        squidly_dir='filtering_pipeline/squidly_final_models/',
         base_output_dir="pipeline_output_test"
     )
 

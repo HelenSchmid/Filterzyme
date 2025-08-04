@@ -50,7 +50,7 @@ def generate_boltz_structure_path(input_path):
     """
     base_path = Path(input_path)
     base_name = base_path.name  
-    new_path = base_path / f"{base_name}_results_{base_name}" / "predictions" / base_name / f"{base_name}_model_0.cif"
+    new_path = base_path / f"boltz_results_{base_name}" / "predictions" / base_name / f"{base_name}_model_0.cif"
     print(new_path)
 
     return new_path

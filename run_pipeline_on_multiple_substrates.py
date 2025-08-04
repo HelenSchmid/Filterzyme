@@ -43,14 +43,14 @@ def main():
 
     # Load data and run the pipeline
     pipeline = Pipeline(
-        df=pd.read_pickle("examples/DEHP-MEHP.pkl"),
+        df=pd.read_pickle("examples/DEHP-MEHP.pkl").head(2),
         ligand_name=args.ligand_name,
         ligand_smiles=args.ligand_smiles,
         smarts_pattern=smarts_pattern,
         max_matches=5000,
         find_closest_nuc=1,
         num_threads=1,
-        squidly_dir='squidly_final_models/',
+        squidly_dir='filtering_pipeline/squidly_final_models/',
         base_output_dir=output_dir,
     )
 

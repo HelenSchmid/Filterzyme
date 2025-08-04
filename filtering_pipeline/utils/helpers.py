@@ -78,7 +78,6 @@ def delete_empty_subdirs(directory):
             print(f"Deleted empty directory: {subdir}")
 
 
-
 class suppress_stdout_stderr:
     def __enter__(self):
         # Open a null file

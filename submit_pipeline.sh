@@ -13,7 +13,7 @@ for name in "${!LIGANDS[@]}"
 do
   echo "Running for $name..."
 
-  python benchmark_filtering_on_exp_tested_variants_run.py "$name" "${LIGANDS[$name]}" \
+  python run_pipeline_on_multiple_substrates.py "$name" "${LIGANDS[$name]}" \
     2> "logs/${name}.err" \
     1> "logs/${name}.out"
 

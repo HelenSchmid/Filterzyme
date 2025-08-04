@@ -191,7 +191,7 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
             'Entry': entry,
             'tool': tool, 
             'best_structure': best_structure_name,
-            'avg_rmsd': avg_rmsd[best_structure_name],
+            'avg_ligandRMSD': avg_rmsd[best_structure_name],
             'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
         })
 
@@ -274,7 +274,7 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
                 'Entry': entry,
                 'tool': structure_to_tool[best_s],
                 'best_structure': best_s,
-                'avg_rmsd': weighted_rmsd_scores[best_s],
+                'avg_ligandRMSD': weighted_rmsd_scores[best_s],
                 'method': 'inter_tool_weighted_avg',
                 'Squidly_CR_Position': squidly_pos
             })
@@ -306,7 +306,7 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
                 'Entry': entry,
                 'tool': structure_to_tool[best_s],
                 'best_structure': best_s,
-                'avg_rmsd': closest_rmsd_scores[best_s],
+                'avg_ligandRMSD': closest_rmsd_scores[best_s],
                 'method': 'inter_tool_min_per_tool',
                 'Squidly_CR_Position': squidly_pos
             })
@@ -323,7 +323,7 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
                     'Entry': entry,
                     'tool': 'vina',
                     'best_structure': best_vina,
-                    'avg_rmsd': avg_rmsd_vina[best_vina],
+                    'avg_ligandRMSD': avg_rmsd_vina[best_vina],
                     'method': 'vina_avg_intra_tool',
                     'Squidly_CR_Position': squidly_pos
                 })
@@ -366,6 +366,13 @@ class LigandRMSD(Step):
                     Chem.SanitizeMol(ligand2)
                     ligand1 = Chem.RemoveHs(ligand1)
                     ligand2 = Chem.RemoveHs(ligand2)
+
+                    if ligand1.GetNumConformers() == 0:
+                        AllChem.EmbedMolecule(ligand1)
+
+                    if ligand2.GetNumConformers() == 0:
+                        AllChem.EmbedMolecule(ligand2)
+
                 except Chem.rdchem.AtomValenceException as e:
                     print(f"Valence error in {pdb_file_path.name}: {e}")
                     print(Chem.MolToSmiles(ligand1))  # Just to check
@@ -376,7 +383,11 @@ class LigandRMSD(Step):
                     continue
 
                 # Calculate ligandRMSD
-                rmsd = rdMolAlign.CalcRMS(ligand1, ligand2, maxMatches = self.maxMatches )
+                try:
+                    rmsd = rdMolAlign.CalcRMS(ligand1, ligand2, maxMatches=self.maxMatches)
+                except RuntimeError as e:
+                    print(f"LigandRMSD calculation failed for {pdb_file_path.name}: {e}")
+                    continue 
 
                 # Store the RMSD value in a dictionary
                 pdb_file_name = pdb_file_path.name

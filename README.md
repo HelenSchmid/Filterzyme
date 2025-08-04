@@ -7,10 +7,9 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ## 🚀 Features
 
-- Parse and apply SMARTS patterns to ligand structures.
-- Filter poses based on geometric constraints.
+- Analysis of enzyme-ligand docking using multiple docking tools (ML- and physics-based).
 - Optional esterase or nucleophile-focused analysis.
-- Supports CSV and pickle-based data pipelines.
+- User-friendly pipeline only using a .pkl file as input and ligand smile strings. 
 
 ---
 
@@ -18,7 +17,7 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ### Option 1: Install via pip
 ```bash
-pip install XXXX
+pip install enzyme-filtering-pipline
 ```
 ### Option 2: Clone the repository
 ```bash
@@ -50,7 +49,7 @@ pipeline = Pipeline(
         esterase=1,
         find_closest_nuc=1,
         num_threads=1,
-        squidly_dir='/nvme2/ariane/home/data/models/squidly_final_models/',
+        squidly_dir='filtering_pipeline/squidly_final_models/',
         base_output_dir="pipeline_output"
     )
 

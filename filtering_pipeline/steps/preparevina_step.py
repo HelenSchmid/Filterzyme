@@ -114,22 +114,27 @@ def split_ligands_and_combine(protein_path, ligands_path, entry_name, output_dir
 
         # Add protein atoms
         combined_atoms.extend(protein_atoms)
+        
+        # Add TER after protein
         if protein_atoms:
             last = protein_atoms[-1].ljust(80)
-            ter_line = (
-                f"TER   {len(protein_atoms)+1:5d}      "
-                f"{last[17:20]} {last[21]}{last[22:26]}"
-            )
+            resname = last[17:20].strip()
+            chain = last[21].strip()
+            resnum = int(last[22:26].strip())
+            serial_number = len(protein_atoms) + 1
+            ter_line = f"TER   {serial_number:5d}      {resname:>3s} {chain}{resnum:4d}"
             combined_atoms.append(ter_line)
 
-        # Add ligand atoms
         combined_atoms.extend(ligand_atoms)
+
+        # Add TER after ligand
         if ligand_atoms:
             last = ligand_atoms[-1].ljust(80)
-            ter_line = (
-                f"TER   {len(combined_atoms)+1:5d}      "
-                f"{last[17:20]} {last[21]}{last[22:26]}"
-            )
+            resname = last[17:20].strip()
+            chain = last[21].strip()
+            resnum = int(last[22:26].strip())
+            serial_number = len(combined_atoms) + 1
+            ter_line = f"TER   {serial_number:5d}      {resname:>3s} {chain}{resnum:4d}"
             combined_atoms.append(ter_line)
 
 
@@ -137,10 +142,13 @@ def split_ligands_and_combine(protein_path, ligands_path, entry_name, output_dir
             serial = 1
             new_combined = []
             for line in combined_atoms:
-                line = line.ljust(80)  # Ensure line is long enough
-                new_line = f"{line[:6]}{serial:5d}{line[11:]}"
+                if line.startswith(('ATOM', 'HETATM')):
+                    line = line.ljust(80)
+                    new_line = f"{line[:6]}{serial:5d}{line[11:]}"
+                    serial += 1
+                else:
+                    new_line = line  # e.g., TER or other lines stay as is
                 new_combined.append(new_line)
-                serial += 1
             combined_atoms = new_combined
         
         # Save the combined structure to a PDB file

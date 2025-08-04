@@ -4,6 +4,7 @@ import pandas as pd
 import logging
 from pathlib import Path
 from Bio.PDB import PDBParser, PDBIO, Select
+import re
 
 
 logger = logging.getLogger(__name__)

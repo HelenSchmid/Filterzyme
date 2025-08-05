@@ -200,6 +200,59 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
     return best_df
 
 
+def compute_normalized_ligand_rmsd_stats(rmsd_df: pd.DataFrame):
+    """
+    Computes per-entry normalized ligand RMSD statistics:
+    - Mean and std of within-tool RMSDs (e.g. vina-vina, dchai-chai)
+    - Mean and std of between-tool RMSDs (e.g. vina-chai, vina-boltz)
+    - Overall mean and std RMSD for each entry
+    Adds these as new columns to rmsd_df.
+    """
+    from itertools import combinations_with_replacement
+
+    # Ensure lowercase and clean tool names
+    rmsd_df["tool1"] = rmsd_df["tool1"].str.strip().str.lower()
+    rmsd_df["tool2"] = rmsd_df["tool2"].str.strip().str.lower()
+
+    enriched_df = rmsd_df.copy()
+
+    # Collect per-entry statistics
+    entry_stats = []
+
+    for entry, group in rmsd_df.groupby("Entry"):
+        stats = {"Entry": entry}
+        overall_rmsds = []
+
+        tools = sorted(set(group["tool1"]).union(group["tool2"]))
+
+        for t1, t2 in combinations_with_replacement(tools, 2):
+            pair_label = f"{min(t1, t2)}-{max(t1, t2)}"
+            mask = group.apply(
+                lambda row: set([row["tool1"], row["tool2"]]) == set([t1, t2]),
+                axis=1
+            )
+            subset = group[mask]
+            rmsds = subset["ligand_rmsd"].dropna().tolist()
+            overall_rmsds.extend(rmsds)
+
+            if t1 == t2:
+                stats[f"{t1}_{t1}_mean_ligandRMSD"] = np.mean(rmsds) if rmsds else np.nan
+                stats[f"{t1}_{t1}_std_ligandRMSD"] = np.std(rmsds) if rmsds else np.nan
+            else:
+                stats[f"{t1}_{t2}_mean_ligandRMSD"] = np.mean(rmsds) if rmsds else np.nan
+                stats[f"{t1}_{t2}_std_ligandRMSD"] = np.std(rmsds) if rmsds else np.nan
+
+        stats["overall_ligandRMSD_mean"] = np.mean(overall_rmsds) if overall_rmsds else np.nan
+        stats["overall_ligandRMSD_std"] = np.std(overall_rmsds) if overall_rmsds else np.nan
+
+        entry_stats.append(stats)
+
+    stats_df = pd.DataFrame(entry_stats)
+    enriched_df = enriched_df.merge(stats_df, on="Entry", how="left")
+
+    return enriched_df
+
+
 
 def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -436,6 +489,10 @@ class LigandRMSD(Step):
         csv_file = Path(self.output_dir) / "ligand_rmsd.csv"
         rmsd_df.to_csv(csv_file, index=False)
         logger.info(f"Ligand RMSD results saved to: {csv_file}")
+
+        # Add tool-wise and overall normalized stats per entry
+        rmsd_df = compute_normalized_ligand_rmsd_stats(rmsd_df)
+
         return rmsd_df             
 
 

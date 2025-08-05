@@ -173,7 +173,7 @@ class Superimposition:
         log_section('Superimposition')
         log_subsection('Superimposing docked structures')
         df_sup = self._prepare_files_for_superimposition()
-        self._superimposition(df_sup)
+        df_sup = self._superimposition(df_sup)
         log_subsection('Calculating protein RMSDs')
         df_proteinRMSD = self._proteinRMSD(df_sup)
         log_subsection('Calculating ligand RMSDs')

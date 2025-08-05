@@ -151,7 +151,6 @@ class DockingMetrics(Step):
             vina_dir = Path(row['vina_dir']).parent
             vina_metrics = extract_docking_metrics_vina(vina_dir, entry_name, ligand_name)
             row_result = {'vina_affinities': vina_metrics if vina_metrics else {}}
-            results.append(row_result)
 
             # ---Exract chai docking metrics---
             chai_dir = Path(row['chai_dir']) / 'chai'

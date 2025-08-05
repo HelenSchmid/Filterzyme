@@ -5,7 +5,7 @@ import logging
 import os
 
 from filtering_pipeline.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path
-from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs
+from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs, add_metrics_to_best_structures
 from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
 from filtering_pipeline.steps.save_step import Save
 from filtering_pipeline.steps.extract_docking_metrics_step import DockingMetrics
@@ -172,8 +172,8 @@ class Superimposition:
         
         log_section('Superimposition')
         log_subsection('Superimposing docked structures')
-        df_sup = self._prepare_files_for_superimposition()
-        df_sup = self._superimposition(df_sup)
+        df_prep = self._prepare_files_for_superimposition()
+        df_sup = self._superimposition(df_prep)
         log_subsection('Calculating protein RMSDs')
         df_proteinRMSD = self._proteinRMSD(df_sup)
         log_subsection('Calculating ligand RMSDs')
@@ -182,12 +182,12 @@ class Superimposition:
 
 
     def _prepare_files_for_superimposition(self):
-        df_vina = pd.read_pickle(Path(self.input_dir) / 'vina.pkl')
+        df_metrics = pd.read_pickle(Path(self.input_dir) / 'dockingmetrics.pkl')
         preparedfiles_dir = Path(self.output_dir) / 'preparedfiles_for_superimposition/'
-        df_vina << (PrepareVina('vina_dir', self.ligand_name,  preparedfiles_dir) 
+        df_metrics << (PrepareVina('vina_dir', self.ligand_name,  preparedfiles_dir) 
                 >> PrepareChai('chai_dir', preparedfiles_dir, 1) 
                 >> PrepareBoltz('boltz_dir' , preparedfiles_dir, 1))
-        return df_vina
+        return df_metrics
 
     def _superimposition(self,  df):                   
         output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
@@ -209,9 +209,10 @@ class Superimposition:
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
-        df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches)  
-                            >> Save(Path(self.output_dir)/'ligandRMSD.pkl'))
-        return df_ligandRMSD
+        df_best_structures = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
+        df_best_structures_w_metrics = add_metrics_to_best_structures(df_best_structures, pd.read_pickle(Path(self.output_dir).parent / 'docking/dockingmetrics.pkl'))
+        df_best_structures_w_metrics.to_pickle(Path(self.output_dir) / 'best_structures.pkl')
+        return df_best_structures_w_metrics
 
 class GeometricFilters:
     def __init__(self, substrate_smiles: str, smarts_pattern: str, df, esterase = 0, find_closest_nuc = 0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
@@ -328,7 +329,7 @@ class Pipeline:
         gf = GeometricFilters(
             substrate_smiles=self.ligand_smiles,
             smarts_pattern=self.smarts_pattern,
-            df = pd.read_csv(Path(self.base_output_dir) / 'superimposition/ligandRMSD/best_docked_structures.csv'),
+            df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/best_structures.pkl'),
             esterase=self.esterase,
             find_closest_nuc=self.find_closest_nuc,
             input_dir=Path(self.base_output_dir) / "superimposition",

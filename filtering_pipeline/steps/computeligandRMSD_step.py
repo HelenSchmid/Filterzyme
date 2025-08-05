@@ -130,76 +130,6 @@ def get_tool_from_structure_name(structure_name: str) -> str:
 
 
 
-
-'''
-1. Weighted Inter-Tool Average RMSD (already implemented)
-- For each pose, compute the average RMSD to all poses from each other tool
-- Weight each tool by the number of poses it contributes
-- Select the pose with the lowest weighted average RMSD
-
-2. Closest Pose Per Other Tool (Tool Min-RMSD)
-- For each pose, find the single most similar pose (lowest RMSD) from each other tool
-- Take the average of these lowest RMSDs
-- Select the pose with the lowest average across other tools
-'''
-
-
-def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    For each Entry, selects the best docked structure for each tool. Defined as structure with the lowest 
-    average RMSD to all structures from same docking tool. 
-    """
-    best_structures = []
-
-    # Filter the DataFrame to only include intra-tool RMSD comparisons
-    intra_tool_rmsd_df = rmsd_df[rmsd_df['tool1'] == rmsd_df['tool2']].copy()
-    intra_tool_rmsd_df['tool'] = intra_tool_rmsd_df['tool1']
-
-    # Group by both 'Entry' and 'tool' on the filtered df
-    for (entry, tool), group in intra_tool_rmsd_df.groupby(["Entry", "tool"]):
-        # Extract unique structure names within this specific Entry-tool group
-        structures = list(set(group['docked_structure1']).union(group['docked_structure2']))
-        structures.sort() # Ensure consistent order for matrix indexing
-
-        rmsd_matrix = pd.DataFrame(np.nan, index=structures, columns=structures)
-
-        # Populate the RMSD matrix
-        for _, row in group.iterrows():
-            s1, s2, r = row['docked_structure1'], row['docked_structure2'], row['ligand_rmsd']
-            rmsd_matrix.loc[s1, s2] = r
-            rmsd_matrix.loc[s2, s1] = r # Fill symmetric entry
-
-        # Fill diagonal with 0 (RMSD of a structure to itself is 0)
-        np.fill_diagonal(rmsd_matrix.values, 0)
-        
-        # Calculate mean RMSD 
-        avg_rmsd = rmsd_matrix.mean(axis=1)
-        
-        # Drop rows (structures) from avg_rmsd that are all NaNs (meaning no valid comparisons)
-        avg_rmsd = avg_rmsd.dropna()
-
-        if avg_rmsd.empty:
-            logger.warning(f"No valid RMSD averages for Entry: {entry}, tool: {tool}. Skipping.")
-            continue # Skip if no valid averages could be calculated
-
-        # Select the structure with the lowest average RMSD
-        best_structure_name = avg_rmsd.idxmin()
-
-        squidly_residues = rmsd_df.loc[rmsd_df['Entry'] == entry, 'Squidly_CR_Position']
-
-        best_structures.append({
-            'Entry': entry,
-            'tool': tool, 
-            'best_structure': best_structure_name,
-            'avg_ligandRMSD': avg_rmsd[best_structure_name],
-            'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
-        })
-
-    best_df = pd.DataFrame(best_structures)
-
-    return best_df
-
-
 def compute_normalized_ligand_rmsd_stats(rmsd_df: pd.DataFrame):
     """
     Computes per-entry normalized ligand RMSD statistics:
@@ -253,7 +183,6 @@ def compute_normalized_ligand_rmsd_stats(rmsd_df: pd.DataFrame):
     return enriched_df
 
 
-
 def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
     """
     Selects the best overall docked structure per Entry using two methods:
@@ -295,8 +224,6 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
         for s, t in structure_to_tool.items():
             tool_to_structures[t].append(s)
 
-        squidly_pos = entry_df['Squidly_CR_Position'].iloc[0] if 'Squidly_CR_Position' in entry_df.columns else None
-
         # ----- Method 1: Weighted average RMSD to all poses per other tool -----
         weighted_rmsd_scores = {}
         for s in rmsd_matrix.index:
@@ -328,8 +255,7 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
                 'tool': structure_to_tool[best_s],
                 'best_structure': best_s,
                 'avg_ligandRMSD': weighted_rmsd_scores[best_s],
-                'method': 'inter_tool_weighted_avg',
-                'Squidly_CR_Position': squidly_pos
+                'method': 'inter_tool_weighted_avg'
             })
 
         # ----- Method 2: Average of closest pose per tool -----
@@ -360,8 +286,7 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
                 'tool': structure_to_tool[best_s],
                 'best_structure': best_s,
                 'avg_ligandRMSD': closest_rmsd_scores[best_s],
-                'method': 'inter_tool_min_per_tool',
-                'Squidly_CR_Position': squidly_pos
+                'method': 'inter_tool_min_per_tool'
             })
 
         # ----- Method 3: Intra-tool average RMSD within Vina structures -----
@@ -377,11 +302,12 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
                     'tool': 'vina',
                     'best_structure': best_vina,
                     'avg_ligandRMSD': avg_rmsd_vina[best_vina],
-                    'method': 'vina_avg_intra_tool',
-                    'Squidly_CR_Position': squidly_pos
+                    'method': 'vina_avg_intra_tool'
                 })
 
     return pd.DataFrame(best_structures)
+
+
 
 class LigandRMSD(Step):
     def __init__(self, entry_col = 'Entry', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 
@@ -450,11 +376,6 @@ class LigandRMSD(Step):
                 docked_structure1_name = structure_names[0] if len(structure_names) > 0 else None
                 docked_structure2_name = structure_names[1] if len(structure_names) > 1 else None
 
-                if 'Squidly_CR_Position' in df.columns:
-                    squidly_residues = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
-                else:
-                    squidly_residues = pd.Series(dtype=object)
-
 
                 tool1_name = get_tool_from_structure_name(docked_structure1_name)
                 tool2_name  = get_tool_from_structure_name(docked_structure2_name)
@@ -466,34 +387,53 @@ class LigandRMSD(Step):
                     'docked_structure2' : docked_structure2_name, 
                     'tool1' : tool1_name, 
                     'tool2': tool2_name,
-                    'ligand_rmsd': rmsd,   # Store the calculated RMSD value
-                    'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
+                    'ligand_rmsd': rmsd   # Store the calculated RMSD value
                 })
 
         # Convert the list of dictionaries into a df
         rmsd_df = pd.DataFrame(rmsd_values)
 
-        # If heatmaps are to be visualized, call the visualization function
-        if self.visualize_heatmaps:
-            heatmap_output_dir = Path(self.output_dir) / 'ligandRMSD_heatmaps'
-            os.makedirs(heatmap_output_dir, exist_ok=True)
-            visualize_rmsd_by_entry(rmsd_df, output_dir=heatmap_output_dir)
-
-        # Select the best docked structures based on RMSD
-        best_docked_structure_df = select_best_docked_structures(rmsd_df)
-        output_path = Path(self.output_dir) / "best_docked_structures.csv"
-        best_docked_structure_df.to_csv(output_path, index=False)
-        logger.info(f"Best docked structures (per tool) saved to: {output_path}")
-
-        # Save the DataFrame as a csv file
-        csv_file = Path(self.output_dir) / "ligand_rmsd.csv"
-        rmsd_df.to_csv(csv_file, index=False)
-        logger.info(f"Ligand RMSD results saved to: {csv_file}")
-
         # Add tool-wise and overall normalized stats per entry
         rmsd_df = compute_normalized_ligand_rmsd_stats(rmsd_df)
 
-        return rmsd_df             
+        # Merge with the original df to keep metadata
+        rmsd_df = pd.merge(df, rmsd_df.drop(columns = ['pdb_file', 'docked_structure1', 'docked_structure2', 'tool1', 'tool2']), on='Entry', how='left')
+
+        # If heatmaps are to be visualized, call the visualization function
+        if self.visualize_heatmaps: 
+            os.makedirs(Path(self.output_dir), exist_ok=True)
+            visualize_rmsd_by_entry(rmsd_df, output_dir=Path(self.output_dir))
+
+        # Select the best docked structures based on RMSD
+        best_docked_structure_df = select_best_docked_structures(rmsd_df)
+
+        # Save the RMSD DataFrame
+        pkl_file = Path(self.output_dir).parent / "ligandRMSD.pkl"
+        rmsd_df.to_pickle(pkl_file)
+
+        # Filter original df to only include best structures
+        columns_to_add = ['Squidly_CR_Position','Entry',
+       'chai-chai_mean_proteinRMSD', 'chai-chai_std_proteinRMSD',
+       'chai-vina_mean_proteinRMSD', 'chai-vina_std_proteinRMSD',
+       'boltz-chai_mean_proteinRMSD', 'boltz-chai_std_proteinRMSD',
+       'vina-vina_mean_proteinRMSD', 'vina-vina_std_proteinRMSD',
+       'boltz-vina_mean_proteinRMSD', 'boltz-vina_std_proteinRMSD',
+       'boltz-boltz_mean_proteinRMSD', 'boltz-boltz_std_proteinRMSD',
+       'entry_overall_mean_proteinRMSD', 'entry_overall_std_proteinRMSD', 
+       'ligand_rmsd', 'boltz_boltz_mean_ligandRMSD',
+       'boltz_boltz_std_ligandRMSD', 'boltz_chai_mean_ligandRMSD',
+       'boltz_chai_std_ligandRMSD', 'boltz_vina_mean_ligandRMSD',
+       'boltz_vina_std_ligandRMSD', 'chai_chai_mean_ligandRMSD',
+       'chai_chai_std_ligandRMSD', 'chai_vina_mean_ligandRMSD',
+       'chai_vina_std_ligandRMSD', 'vina_vina_mean_ligandRMSD',
+       'vina_vina_std_ligandRMSD', 'overall_ligandRMSD_mean',
+       'overall_ligandRMSD_std',
+       ]
+        
+        rmsd_subset = rmsd_df[columns_to_add].drop_duplicates(subset="Entry")
+        merged_df = pd.merge(best_docked_structure_df, rmsd_subset[columns_to_add].drop_duplicates(), on="Entry", how="left")
+
+        return merged_df             
 
 
     def execute(self, df) -> pd.DataFrame:

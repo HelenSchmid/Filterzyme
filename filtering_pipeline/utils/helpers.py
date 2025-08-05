@@ -118,3 +118,58 @@ def extract_ligand_from_PDB(input_pdb, output_pdb, ligand_resname):
     io = PDBIO()
     io.set_structure(structure)
     io.save(str(output_pdb), LigandSelect(ligand_resname))
+
+
+def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
+    """
+    Merges docking metrics from df_dockmetrics into best_strucutures_df based on the 'Entry' column.
+    Extracts structure IDs and vina indices from the 'best_structure' column.
+    """
+    dict_columns = [
+        "chai_aggregate_score", "chai_ptm", "chai_iptm",
+        "chai_per_chain_ptm", "chai_per_chain_pair_iptm", 
+        "chai_has_clashes", "chai_chain_chain_clashes", 
+        "boltz2_confidence_score", "boltz2_ptm", "boltz2_iptm", 
+        "boltz2_ligand_iptm", "boltz2_protein_iptm", 
+        "boltz2_complex_plddt", "boltz2_complex_iplddt", 
+        "boltz2_complex_pde", "boltz2_complex_ipde", 
+        "boltz2_chains_ptm", "boltz2_pair_chains_iptm"
+    ]
+
+    def extract_structure_id(full_name):
+        parts = full_name.split("_")
+        if parts[-1] in {"vina", "chai", "boltz"}:
+            return "_".join(parts[:-1])
+        return full_name
+
+    def extract_vina_index(structure):
+        if structure.endswith("_vina"):
+            try:
+                return int(structure.split("_")[-2])
+            except:
+                return None
+        return None
+
+    df_dockmetrics_reduced = df_dockmetrics[["Entry"] + dict_columns + ["vina_affinities"]].drop_duplicates(subset="Entry")
+    merged_df = pd.merge(best_strucutures_df, df_dockmetrics_reduced, on="Entry", how="left")
+
+    # Extract structure ID and replace dict columns with values
+    structure_ids = merged_df["best_structure"].map(extract_structure_id)
+
+    for col in dict_columns:
+        merged_df[col] = [
+            d.get(structure_id) if isinstance(d, dict) else None
+            for d, structure_id in zip(merged_df[col], structure_ids)
+        ]
+
+    # Extract vina affinity
+    vina_indices = merged_df["best_structure"].map(extract_vina_index)
+
+    merged_df["vina_affinity"] = [
+        v.get(idx) if isinstance(v, dict) and idx is not None else None
+        for v, idx in zip(merged_df["vina_affinities"], vina_indices)
+    ]
+
+    merged_df_final = merged_df.drop(columns=["vina_affinities"])
+
+    return merged_df_final

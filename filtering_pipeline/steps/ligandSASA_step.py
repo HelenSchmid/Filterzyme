@@ -34,8 +34,7 @@ class LigandSASA(Step):
     def __init__(self, input_dir = None,  output_dir: str = ''):
 
         self.input_dir = Path(input_dir)
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)        
+        self.output_dir = Path(output_dir)     
 
     def __execute(self, df: pd.DataFrame, tmp_dir: str) -> list:
 

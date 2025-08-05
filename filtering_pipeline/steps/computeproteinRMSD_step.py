@@ -1,4 +1,5 @@
 from filtering_pipeline.steps.step import Step
+from filtering_pipeline.utils.helpers import clean_plt
 
 import pandas as pd
 from pathlib import Path
@@ -26,17 +27,6 @@ logger.setLevel(logging.INFO)
 plt.rcParams['svg.fonttype'] = 'none'  # Ensure text is saved as text
 sns.set(rc={'figure.figsize': (3,3), 'font.family': 'sans-serif', 'font.sans-serif': 'DejaVu Sans', 'font.size': 12}, 
         style='ticks')
-
-def clean_plt(ax):
-    ax.tick_params(direction='out', length=2, width=1.0)
-    ax.spines['bottom'].set_linewidth(1.0)
-    ax.spines['top'].set_linewidth(0)
-    ax.spines['left'].set_linewidth(1.0)
-    ax.spines['right'].set_linewidth(0)
-    ax.tick_params(labelsize=10.0)
-    ax.tick_params(axis='x', which='major', pad=2.0)
-    ax.tick_params(axis='y', which='major', pad=2.0)
-    return ax
 
 
 def compute_proteinrmsd(pdb_file): 
@@ -71,6 +61,83 @@ def get_tool_from_structure_name(structure_name: str) -> str:
         return structure_name.split('_')[-1]
     return "UNKNOWN_tool" # Fallback if format doesn't match
 
+
+from itertools import combinations_with_replacement
+
+def compute_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
+    # Normalize tool names
+    rmsd_df["tool1"] = rmsd_df["tool1"].str.strip().str.lower()
+    rmsd_df["tool2"] = rmsd_df["tool2"].str.strip().str.lower()
+    tools = [t.strip().lower() for t in tools]
+
+    # Define consistent pair labels
+    def get_pair_label(row):
+        t1, t2 = sorted([row["tool1"], row["tool2"]])
+        return f"{t1}-{t2}"
+
+    rmsd_df["tool_pair"] = rmsd_df.apply(get_pair_label, axis=1)
+
+    all_pairwise_rmsds = []
+    pairwise_stats = []
+
+    for t1, t2 in combinations_with_replacement(tools, 2):
+        label = f"{min(t1, t2)}-{max(t1, t2)}"
+        subset = rmsd_df[rmsd_df["tool_pair"] == label]
+        rmsds = subset["protein_rmsd"].dropna().tolist()
+
+        all_pairwise_rmsds.extend(rmsds)
+
+        pairwise_stats.append({
+            "tool_pair": label,
+            "mean_proteinRMSD": np.mean(rmsds) if rmsds else np.nan,
+            "std_proteinRMSD": np.std(rmsds) if rmsds else np.nan,
+            "n": len(rmsds)
+        })
+
+    # Overall stats
+    pairwise_stats.append({
+        "tool_pair": "overall",
+        "overall_proteinRMSD_mean": np.mean(all_pairwise_rmsds) if all_pairwise_rmsds else np.nan,
+        "overall_proteinRMSD_std": np.std(all_pairwise_rmsds) if all_pairwise_rmsds else np.nan,
+        "n": len(all_pairwise_rmsds)
+    })
+
+    return pd.DataFrame(pairwise_stats)
+
+
+def compute_entrywise_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
+    from itertools import combinations_with_replacement
+
+    tools = [t.strip().lower() for t in tools]
+    all_stats = []
+
+    for entry, group in rmsd_df.groupby("Entry"):
+        group = group.copy()
+        group["tool1"] = group["tool1"].str.strip().str.lower()
+        group["tool2"] = group["tool2"].str.strip().str.lower()
+
+        def get_pair_label(row):
+            t1, t2 = sorted([row["tool1"], row["tool2"]])
+            return f"{t1}-{t2}"
+        
+        group["tool_pair"] = group.apply(get_pair_label, axis=1)
+
+        entry_stats = {"Entry": entry}
+
+        for t1, t2 in combinations_with_replacement(tools, 2):
+            label = f"{min(t1, t2)}-{max(t1, t2)}"
+            subset = group[group["tool_pair"] == label]
+            rmsds = subset["proteinRMSD"].dropna().tolist()
+            entry_stats[f"{label}_mean_proteinRMSD"] = np.mean(rmsds) if rmsds else np.nan
+            entry_stats[f"{label}_std_proteinRMSD"] = np.std(rmsds) if rmsds else np.nan
+
+        all_stats.append(entry_stats)
+
+    return pd.DataFrame(all_stats)
+
+
+
+
 def visualize_rmsd_by_entry(rmsd_df, output_dir="proteinRMSD_heatmaps"):
     '''
     Visualizes RMSD values as heatmaps for each entry in the resulting dataframe.
@@ -85,7 +152,7 @@ def visualize_rmsd_by_entry(rmsd_df, output_dir="proteinRMSD_heatmaps"):
         rmsd_matrix = pd.DataFrame(np.nan, index=docked_proteins, columns=docked_proteins)
 
         for _, row in group.iterrows():
-            l1, l2, rmsd = row['docked_structure1'], row['docked_structure2'], row['protein_rmsd']
+            l1, l2, rmsd = row['docked_structure1'], row['docked_structure2'], row['proteinRMSD']
             rmsd_matrix.loc[l1, l2] = rmsd
             rmsd_matrix.loc[l2, l1] = rmsd
 
@@ -150,13 +217,27 @@ class ProteinRMSD(Step):
                     'tool1' : tool1_name, 
                     'tool2': tool2_name,
                     'Squidly_CR_Position': squidly_residues,
-                    'protein_rmsd': rmsd,   # Store the calculated RMSD value
+                    'proteinRMSD': rmsd,   # Store the calculated RMSD value
                 })
-        
-        # Convert the list of dictionaries into a df
+ 
+        # Build the main RMSD DataFrame
         rmsd_df = pd.DataFrame(rmsd_values)
 
-        # If heatmaps are to be visualized, call the visualization function
+        # Compute per-entry tool pair statistics
+        entry_pair_stats = compute_entrywise_tool_pair_stats(rmsd_df)
+
+        # Compute overall mean/std RMSD per entry
+        entry_overall_stats = (
+            rmsd_df.groupby("Entry")["proteinRMSD"]
+            .agg(entry_overall_mean_proteinRMSD="mean", entry_overall_std_proteinRMSD="std")
+            .reset_index()
+        )
+
+        # Merge both stats into rmsd_df
+        rmsd_df = rmsd_df.merge(entry_pair_stats, on="Entry", how="left")
+        rmsd_df = rmsd_df.merge(entry_overall_stats, on="Entry", how="left")
+
+        # Optionally generate heatmaps
         if self.visualize_heatmaps:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             visualize_rmsd_by_entry(rmsd_df, output_dir=self.output_dir)

@@ -376,7 +376,6 @@ class LigandRMSD(Step):
                 docked_structure1_name = structure_names[0] if len(structure_names) > 0 else None
                 docked_structure2_name = structure_names[1] if len(structure_names) > 1 else None
 
-
                 tool1_name = get_tool_from_structure_name(docked_structure1_name)
                 tool2_name  = get_tool_from_structure_name(docked_structure2_name)
 

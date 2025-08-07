@@ -1,5 +1,5 @@
 from filtering_pipeline.steps.step import Step
-from filtering_pipeline.utils.helpers import clean_plt
+from filtering_pipeline.utils.helpers import clean_plt,extract_entry_name_from_PDB_filename
 
 import pandas as pd
 from pathlib import Path
@@ -198,7 +198,7 @@ class ProteinRMSD(Step):
                 docked_structure1_name = structure_names[0] if len(structure_names) > 0 else None
                 docked_structure2_name = structure_names[1] if len(structure_names) > 1 else None
 
-                entry_name = docked_structure1_name.split('_')[0]
+                entry_name = sub_dir.name 
 
                 mask = df[self.entry_col].str.strip() == entry_name.strip()
                 if 'Squidly_CR_Position' in df.columns and mask.any():

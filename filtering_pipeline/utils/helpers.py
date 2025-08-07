@@ -42,7 +42,7 @@ def log_subsection(title: str):
 
 def log_boxed_note(text):
     border = "-" * (len(text) + 8)
-    print(f"\n{border}\n|   {text}   |\n{border}\n")
+    logger.info(f"\n{border}\n|   {text}   |\n{border}\n")
 
 def generate_boltz_structure_path(input_path):
     """
@@ -101,6 +101,22 @@ class LigandSelect(Select):
 
     def accept_residue(self, residue):
         return residue.get_resname() == self.ligand_resname
+
+
+def extract_entry_name_from_PDB_filename(name):
+    '''Extracts the entry name from a PDB filename of docked structures.
+    '''
+    suffix = name.rsplit('_', 1)[-1]
+    parts = name.split('_')
+
+    if suffix in {'boltz'}:
+        # Return everything except the last 3 parts
+        return '_'.join(parts[:-3])
+    elif suffix in {'vina', 'chai'}:
+        # Return everything except the last 2 parts
+        return '_'.join(parts[:-2])
+    else:
+        return name  # fallback if unknown suffix
 
 
 def extract_ligand_from_PDB(input_pdb, output_pdb, ligand_resname):

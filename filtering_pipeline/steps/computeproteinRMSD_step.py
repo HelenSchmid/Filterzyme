@@ -137,7 +137,6 @@ def compute_entrywise_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
 
 
 
-
 def visualize_rmsd_by_entry(rmsd_df, output_dir="proteinRMSD_heatmaps"):
     '''
     Visualizes RMSD values as heatmaps for each entry in the resulting dataframe.
@@ -188,6 +187,8 @@ class ProteinRMSD(Step):
 
             # Process all PDB files in subdirectories
             for pdb_file_path in sub_dir.glob("*.pdb"):
+                if not pdb_file_path.exists():
+                    print(f"File does not exist: {pdb_file_path}")
 
                 rmsd = compute_proteinrmsd(pdb_file_path)  # Compute protein RMSD for the PDB file
 
@@ -222,7 +223,7 @@ class ProteinRMSD(Step):
  
         # Build the main RMSD DataFrame
         rmsd_df = pd.DataFrame(rmsd_values)
-
+        
         # Compute per-entry tool pair statistics
         entry_pair_stats = compute_entrywise_tool_pair_stats(rmsd_df)
 
@@ -241,7 +242,7 @@ class ProteinRMSD(Step):
         if self.visualize_heatmaps:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             visualize_rmsd_by_entry(rmsd_df, output_dir=self.output_dir)
-
+        
         return rmsd_df
 
 

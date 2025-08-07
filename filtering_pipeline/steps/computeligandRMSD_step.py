@@ -87,6 +87,152 @@ def extract_chain_as_rdkit_mol(pdb_path, chain_id, sanitize=False):
 
     return mol
 
+
+from rdkit import Chem
+
+def filter_mol_by_smiles(mol, target_smiles: str) -> Chem.Mol | None:
+    """
+    Return the input RDKit Mol only if its canonical SMILES matches the target SMILES.
+
+    Parameters:
+    - mol: RDKit Mol object
+    - target_smiles: SMILES string to match
+
+    Returns:
+    - mol if it matches, else None
+    """
+    if mol is None:
+        print('mol is none')
+        return None
+
+    try:
+        Chem.SanitizeMol(mol)
+        mol = Chem.RemoveHs(mol)
+    except Exception as e:
+        print(f"Sanitization failed: {e}")
+        return None
+
+    try:
+        mol_smiles = Chem.MolToSmiles(mol, canonical=True)
+        target_smiles_canon = Chem.MolToSmiles(Chem.MolFromSmiles(target_smiles), canonical=True)
+    except Exception as e:
+        print(f"SMILES conversion failed: {e}")
+        return None
+
+    if mol_smiles == target_smiles_canon:
+        return mol
+    else:
+        print('doesnt match')
+        return None
+
+from rdkit import Chem
+from rdkit.Chem import AllChem, DataStructs
+
+def filter_mol_by_similarity(mol, target_smiles: str, threshold: float = 0.85) -> Chem.Mol | None:
+    """
+    Return the input RDKit Mol only if it is similar to the target SMILES.
+
+    Parameters:
+    - mol: RDKit Mol object
+    - target_smiles: SMILES string to match against
+    - threshold: Tanimoto similarity threshold (default = 0.85)
+
+    Returns:
+    - mol if similarity >= threshold, else None
+    """
+    if mol is None:
+        print("Mol is None")
+        return None
+
+    try:
+        Chem.SanitizeMol(mol)
+        mol = Chem.RemoveHs(mol)
+    except Exception as e:
+        print(f"Sanitization failed: {e}")
+        return None
+
+    try:
+        target_mol = Chem.MolFromSmiles(target_smiles)
+        if target_mol is None:
+            print("Failed to parse target SMILES.")
+            return None
+        target_mol = Chem.RemoveHs(target_mol)
+    except Exception as e:
+        print(f"Target SMILES parsing failed: {e}")
+        return None
+
+    # Compute Morgan fingerprints
+    fp_mol = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    fp_target = AllChem.GetMorganFingerprintAsBitVect(target_mol, radius=2, nBits=2048)
+
+    # Compute Tanimoto similarity
+    similarity = DataStructs.TanimotoSimilarity(fp_mol, fp_target)
+    print(f"Similarity = {similarity:.3f}")
+
+    if similarity >= threshold:
+        return mol
+    else:
+        print("Similarity below threshold")
+        return None
+
+
+def get_mcs_similarity(mol1, mol2) -> float:
+    """
+    Returns the fraction of atoms in the MCS over the average atom count of the two molecules.
+    Ignores bond order by setting bond comparison to CompareAny.
+    """
+    if mol1 is None or mol2 is None:
+        return 0.0
+
+    try:
+        res = rdFMCS.FindMCS(
+            [mol1, mol2],
+            bondCompare=rdFMCS.BondCompare.CompareAny,
+            ringMatchesRingOnly=True,
+            completeRingsOnly=True,
+            timeout=5
+        )
+        if res.canceled:
+            return 0.0
+
+        mcs_mol = Chem.MolFromSmarts(res.smartsString)
+        if mcs_mol is None:
+            return 0.0
+
+        mcs_atoms = mcs_mol.GetNumAtoms()
+        avg_atoms = 0.5 * (mol1.GetNumAtoms() + mol2.GetNumAtoms())
+        return mcs_atoms / avg_atoms
+    except Exception as e:
+        print(f"MCS similarity failed: {e}")
+        return 0.0
+
+def filter_mol_by_connectivity(mol, target_smiles: str, threshold: float = 0.8) -> Chem.Mol | None:
+    """
+    Keep the molecule if its topology matches the target SMILES based on MCS similarity.
+    """
+    if mol is None:
+        return None
+
+    try:
+        mol = Chem.RemoveHs(mol)
+        Chem.SanitizeMol(mol)
+    except Exception:
+        return None
+
+    try:
+        target_mol = Chem.MolFromSmiles(target_smiles)
+        if target_mol is None:
+            return None
+        target_mol = Chem.RemoveHs(target_mol)
+        Chem.SanitizeMol(target_mol)
+    except Exception:
+        return None
+
+    sim = get_mcs_similarity(mol, target_mol)
+    print(f"MCS connectivity similarity: {sim:.2f}")
+    return mol if sim >= threshold else None
+
+
 def visualize_rmsd_by_entry(rmsd_df, output_dir="ligandRMSD_heatmaps"):
     '''
     Visualizes RMSD values as heatmaps for each entry in the resulting dataframe.
@@ -127,7 +273,6 @@ def get_tool_from_structure_name(structure_name: str) -> str:
     if '_' in structure_name:
         return structure_name.split('_')[-1]
     return "UNKNOWN_tool" # Fallback if format doesn't match
-
 
 
 def compute_normalized_ligand_rmsd_stats(rmsd_df: pd.DataFrame):
@@ -309,6 +454,49 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
 
 
 
+from rdkit import Chem
+from collections import Counter
+
+def atom_composition_fingerprint(mol):
+    """
+    Returns a Counter of atom symbols in the molecule (e.g., {'C': 10, 'N': 2}).
+    """
+    return Counter([atom.GetSymbol() for atom in mol.GetAtoms()])
+
+def filter_ligands_by_element_composition(ligand_mols, reference_smiles):
+    """
+    Filters a list of RDKit Mol objects based on atom element composition
+    matching a reference SMILES.
+
+    Parameters:
+    - ligand_mols: List of RDKit Mol objects (unsanitized is OK)
+    - reference_smiles: SMILES string of the reference ligand
+
+    Returns:
+    - List of Mol objects from ligand_mols that match the element composition
+    """
+    ref_mol = Chem.MolFromSmiles(reference_smiles)
+    if ref_mol is None:
+        raise ValueError("Reference SMILES could not be parsed.")
+
+    ref_fp = atom_composition_fingerprint(ref_mol)
+
+    matching_ligands = []
+    for mol in ligand_mols:
+        if mol is None:
+            continue
+        try:
+            fp = atom_composition_fingerprint(mol)
+            if fp == ref_fp:
+                matching_ligands.append(mol)
+        except Exception as e:
+            print(f"Error processing ligand: {e}")
+            continue
+
+    return matching_ligands
+
+
+
 class LigandRMSD(Step):
     def __init__(self, entry_col = 'Entry', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 
         self.entry_col = entry_col
@@ -332,9 +520,16 @@ class LigandRMSD(Step):
                 # Extract chain IDs of ligands
                 chain_ids = get_hetatm_chain_ids(pdb_file_path)
 
+
                 # Extract ligands as RDKit mol objects
-                ligand1 = extract_chain_as_rdkit_mol(pdb_file_path, chain_id=chain_ids[0])
-                ligand2 = extract_chain_as_rdkit_mol(pdb_file_path, chain_id=chain_ids[1]) 
+                ligands = [extract_chain_as_rdkit_mol(pdb_file_path, chain_id, sanitize=False) for chain_id in chain_ids]
+                filtered_ligands = filter_ligands_by_element_composition(ligands, "C=CC1=CC=C(OC)C=C1")
+
+                if len(filtered_ligands) > 2:
+                    print('More than 2 ligands were found matching the smile string.')
+
+                ligand1 = filtered_ligands[0]
+                ligand2 = filtered_ligands[1]
 
                 if ligand1 is None or ligand2 is None:
                     print(f"Could not extract both ligands, skipping {pdb_file_path}")
@@ -395,9 +590,6 @@ class LigandRMSD(Step):
         # Add tool-wise and overall normalized stats per entry
         rmsd_df = compute_normalized_ligand_rmsd_stats(rmsd_df)
 
-        # Merge with the original df to keep metadata
-        rmsd_df = pd.merge(df, rmsd_df.drop(columns = ['pdb_file', 'docked_structure1', 'docked_structure2', 'tool1', 'tool2']), on='Entry', how='left')
-
         # If heatmaps are to be visualized, call the visualization function
         if self.visualize_heatmaps: 
             os.makedirs(Path(self.output_dir), exist_ok=True)
@@ -405,6 +597,10 @@ class LigandRMSD(Step):
 
         # Select the best docked structures based on RMSD
         best_docked_structure_df = select_best_docked_structures(rmsd_df)
+
+        # Merge with the original df to keep metadata
+        rmsd_df_for_merge = rmsd_df.drop(columns=['pdb_file', 'docked_structure1', 'docked_structure2', 'tool1', 'tool2'])
+        rmsd_df = pd.merge(df, rmsd_df_for_merge, on='Entry', how='left')
 
         # Save the RMSD DataFrame
         pkl_file = Path(self.output_dir).parent / "ligandRMSD.pkl"
@@ -428,9 +624,9 @@ class LigandRMSD(Step):
        'vina_vina_std_ligandRMSD', 'overall_ligandRMSD_mean',
        'overall_ligandRMSD_std',
        ]
+
         
-        rmsd_subset = rmsd_df[columns_to_add].drop_duplicates(subset="Entry")
-        merged_df = pd.merge(best_docked_structure_df, rmsd_subset[columns_to_add].drop_duplicates(), on="Entry", how="left")
+        merged_df = pd.merge(best_docked_structure_df, rmsd_df_for_merge, on="Entry", how="left")
 
         return merged_df             
 

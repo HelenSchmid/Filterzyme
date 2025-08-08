@@ -16,22 +16,23 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ## Installation
 
-### Option 1: Install via pip
+## Environment Setup
+### Using conda
 ```bash
-pip install enzyme-filtering-pipline
+conda env create -f environment.yml
+conda activate filterpipeline
 ```
-### Option 2: Clone the repository
+
+### Clone the repository
 ```bash
 git clone https://github.com/HelenSchmid/EnzymeStructuralFiltering.git
 cd EnzymeStructuralFiltering
 pip install .
 ```
 
-## Environment Setup
-### Using conda
+### Coming soon: Install via pip
 ```bash
-conda env create -f environment.yml
-conda activate filterpipeline
+pip install enzyme-filtering-pipline
 ```
 
 ## Usage Example

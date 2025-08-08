@@ -14,10 +14,14 @@ dependencies:
   - mmseqs2
   - biotite
   - openbabel
-  - openmm
+  - openmm==8.3.1
   - fpocket
   - pip
   - plip
   - pip:
-    - -e /nvme2/helen/enzyme-tk/enzymetk
+    - -e /disk1/ariane/vscode/enzyme-tk/
     - enzyme-filtering-pipeline
+    - rdkit
+    - freesasa
+    - docko
+    - chai_lab

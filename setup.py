@@ -46,7 +46,7 @@ setup(name='enzyme_filtering_pipeline',
               'filtering_pipeline = filtering_pipeline.__main__:main'
           ]
       },
-      install_requires=['pandas', 'numpy', 'pybiomart'],
+      install_requires=['pandas', 'numpy', 'tqdm', 'biopython', 'biotite', 'matplotlib', 'seaborn', 'rdkit', 'freesasa', 'plip', 'enzymetk', 'docko'],
       python_requires='>=3.6',
       data_files=[("", ["LICENSE"])]
       )

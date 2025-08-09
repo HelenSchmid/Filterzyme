@@ -171,16 +171,23 @@ class PrepareVina(Step):
     def __execute(self, df: pd.DataFrame, output_dir: str) -> pd.DataFrame:
         results = []
 
-        for vina_path in df[self.vina_dir].apply(str):
+        for idx, row in df.iterrows():
+            vina_path_val = row.get(self.vina_dir)
+            ligand_name_val = row.get(self.ligand_name)
 
-            vina_path = Path(vina_path)
+            # Coerce to strings safely
+            vina_path_str = str(vina_path_val) if pd.notna(vina_path_val) else ""
+            ligand_name_str = str(ligand_name_val).strip() if pd.notna(ligand_name_val) else ""
+
+            vina_path = Path(vina_path_str)
             if not vina_path.exists():
                 logger.warning(f"Vina path not found: {vina_path}")
                 results.append(None)
                 continue
 
             entry_name = vina_path.stem
-            ligand_file = vina_path.parent / f'{entry_name}-{self.ligand_name}.pdb'
+            # Use the per-row ligand name in the filename
+            ligand_file = vina_path.parent / f"{entry_name}-{ligand_name_str}.pdb"
 
             try:
                 # Read and clean ligand
@@ -191,8 +198,8 @@ class PrepareVina(Step):
                     protein_path=vina_path,
                     ligands_path=cleaned_ligand_file,
                     entry_name=entry_name,
-                    output_dir=self.output_dir, 
-                    renumber_atoms=True
+                    output_dir=self.output_dir,
+                    renumber_atoms=True,
                 )
                 results.append(output_files)
 
@@ -201,6 +208,7 @@ class PrepareVina(Step):
                 results.append(None)
 
         return results
+
 
 
     def execute(self, df: pd.DataFrame) -> pd.DataFrame:

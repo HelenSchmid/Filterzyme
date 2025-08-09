@@ -20,9 +20,11 @@ if __name__ == "__main__":
         num_threads=1,
         metagenomic_enzymes=0,
         squidly_dir='filtering_pipeline/squidly_final_models/',
-        base_output_dir="DB_short_enzymes_v1", 
+        base_output_dir="pipeline_output_test", 
 
     )
+
+    
 
     superimposition = Superimposition(
     maxMatches = 1000,
@@ -31,5 +33,5 @@ if __name__ == "__main__":
     output_dir = Path('pipeline_output_test/superimposition')
     )
 
-    pipeline.run()
+    #pipeline.run()
 

@@ -521,7 +521,6 @@ class LigandRMSD(Step):
                 # Extract chain IDs of ligands
                 chain_ids = get_hetatm_chain_ids(pdb_file_path)
 
-
                 # Extract ligands as RDKit mol objects
                 ligands = [extract_chain_as_rdkit_mol(pdb_file_path, chain_id, sanitize=False) for chain_id in chain_ids]
                 filtered_ligands = filter_ligands_by_element_composition(ligands, self.ligand_of_interest_smiles)
@@ -529,7 +528,6 @@ class LigandRMSD(Step):
                 if len(filtered_ligands) > 2:
                     print('More than 2 ligands were found matching the smile string.')
 
-                ligand1 = filtered_ligands[0]
                 ligand2 = filtered_ligands[1]
 
                 if ligand1 is None or ligand2 is None:

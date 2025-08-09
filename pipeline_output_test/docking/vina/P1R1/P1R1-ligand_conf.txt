@@ -1,0 +1,10 @@
+receptor = pipeline_output_test/docking/vina/P1R1/P1R1.pdbqt
+ligand = pipeline_output_test/docking/vina/ligand/ligand.pdbqt
+center_x = 1.0800000429153442
+center_y = 3.734999895095825
+center_z = -3.0399999618530273
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32

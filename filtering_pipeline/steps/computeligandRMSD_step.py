@@ -463,6 +463,7 @@ def atom_composition_fingerprint(mol):
     """
     return Counter([atom.GetSymbol() for atom in mol.GetAtoms()])
 
+
 def filter_ligands_by_element_composition(ligand_mols, reference_smiles):
     """
     Filters a list of RDKit Mol objects based on atom element composition
@@ -496,10 +497,10 @@ def filter_ligands_by_element_composition(ligand_mols, reference_smiles):
     return matching_ligands
 
 
-
 class LigandRMSD(Step):
-    def __init__(self, entry_col = 'Entry', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 
+    def __init__(self, entry_col = 'Entry', ligand_of_interest_smiles: str = '', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 
         self.entry_col = entry_col
+        self.ligand_of_interest_smiles = ligand_of_interest_smiles
         self.input_dir = Path(input_dir)   
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -523,7 +524,7 @@ class LigandRMSD(Step):
 
                 # Extract ligands as RDKit mol objects
                 ligands = [extract_chain_as_rdkit_mol(pdb_file_path, chain_id, sanitize=False) for chain_id in chain_ids]
-                filtered_ligands = filter_ligands_by_element_composition(ligands, "C=CC1=CC=C(OC)C=C1")
+                filtered_ligands = filter_ligands_by_element_composition(ligands, self.ligand_of_interest_smiles)
 
                 if len(filtered_ligands) > 2:
                     print('More than 2 ligands were found matching the smile string.')
@@ -624,9 +625,9 @@ class LigandRMSD(Step):
        'vina_vina_std_ligandRMSD', 'overall_ligandRMSD_mean',
        'overall_ligandRMSD_std',
        ]
-
         
-        merged_df = pd.merge(best_docked_structure_df, rmsd_df_for_merge, on="Entry", how="left")
+        rmsd_subset = rmsd_df[columns_to_add].drop_duplicates(subset="Entry")
+        merged_df = pd.merge(best_docked_structure_df, rmsd_subset[columns_to_add].drop_duplicates(), on="Entry", how="left")
 
         return merged_df             
 

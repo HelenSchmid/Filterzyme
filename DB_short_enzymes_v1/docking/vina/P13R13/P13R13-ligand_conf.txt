@@ -1,0 +1,10 @@
+receptor = DB_short_enzymes_v1/docking/vina/P13R13/P13R13.pdbqt
+ligand = DB_short_enzymes_v1/docking/vina/ligand/ligand.pdbqt
+center_x = 7.232999801635742
+center_y = 2.2330000400543213
+center_z = -3.6610000133514404
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32

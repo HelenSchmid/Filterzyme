@@ -1,0 +1,10 @@
+receptor = DB_short_enzymes_v1/docking/vina/P41R41/P41R41.pdbqt
+ligand = DB_short_enzymes_v1/docking/vina/ligand/ligand.pdbqt
+center_x = 4.488999843597412
+center_y = 1.2910000085830688
+center_z = 4.892000198364258
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32

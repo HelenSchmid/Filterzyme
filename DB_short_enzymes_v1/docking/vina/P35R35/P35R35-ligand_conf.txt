@@ -1,0 +1,10 @@
+receptor = DB_short_enzymes_v1/docking/vina/P35R35/P35R35.pdbqt
+ligand = DB_short_enzymes_v1/docking/vina/ligand/ligand.pdbqt
+center_x = 0.05400000140070915
+center_y = 1.9600000381469727
+center_z = -1.6059999465942383
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32

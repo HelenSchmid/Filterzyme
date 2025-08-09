@@ -64,7 +64,6 @@ class Docking:
         df_squidly = pd.merge(self.df, df_cat_res, left_on='Entry', right_on='label', how='inner')
         print(df_squidly.vina_residues)
 
-
         # Remove entries without catalytic residues for proteins without user-specified residues for vina-docking
         if 'vina_residues' not in df_squidly.columns:
             df_squidly['vina_residues'] = None

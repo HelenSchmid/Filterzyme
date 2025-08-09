@@ -1,0 +1,10 @@
+receptor = DB_short_enzymes_v1/docking/vina/P1R42/P1R42.pdbqt
+ligand = DB_short_enzymes_v1/docking/vina/ligand/ligand.pdbqt
+center_x = 2.430999994277954
+center_y = -2.1619999408721924
+center_z = -1.6610000133514404
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32

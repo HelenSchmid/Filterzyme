@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def convert_cif_to_pdb(cif_filepath, pdb_filepath=None):
+def convert_cif_to_pdb(cif_filepath, pdb_filepath=None, heme = 0):
     """
     Converts a mmCIF file to a PDB file. Labels non-amino acid residues as LIG.
     """
@@ -34,19 +34,110 @@ def convert_cif_to_pdb(cif_filepath, pdb_filepath=None):
         structure = parser.get_structure(structure_id, str(cif_filepath))
 
         for model in structure:
-            for chain in model:
+
+            if heme == 1: 
+                for chain in model:
+                    if chain.id == "B":
+                        chain.id = "C"
+                    elif chain.id == "C":
+                        chain.id = "B"
+
+                    for residue in chain:
+                        hetflag, resseq, icode = residue.id
+                        if hetflag != " " and not is_aa(residue, standard=True):
+                            residue.resname = "LIG"
+
+                        for atom in residue:
+                            if "_" in atom.fullname.strip():
+                                base_name = atom.fullname.strip().split("_")[0]
+                                atom.fullname = f"{base_name:>4}"
+
+                                hetflag, resseq, icode = residue.id
+                                # Rename ligand residues to 'LIG' (optional)
+                                if hetflag != " " and not is_aa(residue, standard=True):
+                                    residue.resname = "LIG"
+
+                                # Clean up atom names
+                                for atom in residue:
+                                    if "_" in atom.fullname.strip():
+                                        # Only keep part before underscore, and pad to 4 characters
+                                        base_name = atom.fullname.strip().split("_")[0]
+                                        # Right-align and pad to length 4 
+                                        atom.fullname = f"{base_name:>4}"
+            else: 
+                for chain in model:
+                    for residue in chain:
+
+                        hetflag, resseq, icode = residue.id
+                        # Rename ligand residues to 'LIG' (optional)
+                        if hetflag != " " and not is_aa(residue, standard=True):
+                            residue.resname = "LIG"
+
+                        # Clean up atom names
+                        for atom in residue:
+                            if "_" in atom.fullname.strip():
+                                # Only keep part before underscore, and pad to 4 characters
+                                base_name = atom.fullname.strip().split("_")[0]
+                                # Right-align and pad to length 4 
+                                atom.fullname = f"{base_name:>4}"
+
+        io = PDBIO()
+        io.set_structure(structure)
+        io.save(str(pdb_filepath))
+        return pdb_filepath
+
+    except Exception as e:
+        print(f"Error converting {cif_filepath}: {e}")
+        return None
+
+
+def convert_cif_to_pdb(cif_filepath, pdb_filepath=None, heme=0):
+    """
+    Converts a mmCIF file to a PDB file. Labels non-amino acid residues as LIG.
+    If heme == 1, swaps chain B <-> C.
+    """
+    from Bio.PDB import MMCIFParser, PDBIO
+    from Bio.PDB.Polypeptide import is_aa
+    from pathlib import Path
+
+    cif_filepath = Path(cif_filepath)
+    if pdb_filepath is None:
+        pdb_filepath = cif_filepath.with_suffix('.pdb')
+    else:
+        pdb_filepath = Path(pdb_filepath)
+
+    parser = MMCIFParser(QUIET=True)
+    try:
+        structure_id = cif_filepath.stem
+        structure = parser.get_structure(structure_id, str(cif_filepath))
+            
+        for model in structure:
+
+            if heme == 1:
+                for chain in model:
+                    if chain.id == "B":
+                        chain.id = "D"
+
+                for chain in model:
+                    if chain.id == "C":
+                        chain.id = "B"
+
+                for chain in model:
+                    if chain.id == "D":
+                        chain.id = "C"
+
+            for chain in model: 
+
                 for residue in chain:
                     hetflag, resseq, icode = residue.id
                     # Rename ligand residues to 'LIG' (optional)
                     if hetflag != " " and not is_aa(residue, standard=True):
                         residue.resname = "LIG"
 
-                    # Clean up atom names
                     for atom in residue:
                         if "_" in atom.fullname.strip():
                             # Only keep part before underscore, and pad to 4 characters
                             base_name = atom.fullname.strip().split("_")[0]
-                            # Right-align and pad to length 4 
                             atom.fullname = f"{base_name:>4}"
 
         io = PDBIO()
@@ -59,9 +150,11 @@ def convert_cif_to_pdb(cif_filepath, pdb_filepath=None):
         return None
 
 
+
 class PrepareChai(Step):
-    def __init__(self, chai_dir = None,  output_dir: str = '' , num_threads=1):
+    def __init__(self, chai_dir = None,  output_dir: str = '' , heme = 0,num_threads=1):
         self.chai_dir = chai_dir
+        self.heme = heme
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.num_threads = num_threads or 1
@@ -86,7 +179,7 @@ class PrepareChai(Step):
 
                 try:
                     # Convert mmCIF to PDB files
-                    convert_cif_to_pdb(chai_file_path, pdb_filepath)
+                    convert_cif_to_pdb(chai_file_path, pdb_filepath, self.heme)
                     pdb_file_paths.append(str(pdb_filepath))
 
                 except Exception as e:

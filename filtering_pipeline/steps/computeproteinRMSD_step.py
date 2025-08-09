@@ -18,6 +18,7 @@ from openbabel import openbabel as ob
 from openbabel import pybel
 import tempfile
 from Bio import PDB
+from itertools import combinations_with_replacement
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -29,28 +30,32 @@ sns.set(rc={'figure.figsize': (3,3), 'font.family': 'sans-serif', 'font.sans-ser
         style='ticks')
 
 
-def compute_proteinrmsd(pdb_file): 
+def compute_proteinrmsd(pdb_file):
     parser = PDB.PDBParser(QUIET=True)
     structure = parser.get_structure('complex', pdb_file)
+    model = structure[0]
 
-    # Extract chains A and B 
-    chain_A = structure[0]['A']  # Chain A from model 0
-    chain_B = structure[0]['B']  
-
+    # Need both chains
+    if 'A' not in model or 'B' not in model:
+        logger.warning(f"Chains A/B not found in {pdb_file}")
+        return np.nan
+    
     # Get C-alpha atoms from both chains
-    atoms_A = [atom for atom in chain_A.get_atoms() if atom.get_name() == 'CA']
-    atoms_B = [atom for atom in chain_B.get_atoms() if atom.get_name() == 'CA']
+    chain_A, chain_B = model['A'], model['B']
+    atoms_A = [a for a in chain_A.get_atoms() if a.get_name() == 'CA']
+    atoms_B = [a for a in chain_B.get_atoms() if a.get_name() == 'CA']
 
     # Ensure that the number of C-alpha atoms in both chains match
-    if len(atoms_A) != len(atoms_B):
-        print("The number of C-alpha atoms in the two chains do not match!")
-    else:
-        # Compute RMSD
-        super_imposer = PDB.Superimposer()
-        super_imposer.set_atoms(atoms_A, atoms_B)  # Superimpose the chains based on C-alpha atoms
-        super_imposer.apply(chain_B.get_atoms())  # Apply the transformation to chain B
-        rmsd = super_imposer.rms
-        return rmsd
+    if len(atoms_A) != len(atoms_B) or len(atoms_A) == 0:
+        logger.warning(f"CA count mismatch or zero in {pdb_file}: {len(atoms_A)} vs {len(atoms_B)}")
+        return np.nan
+
+    sup = PDB.Superimposer()
+    sup.set_atoms(atoms_A, atoms_B)
+    sup.apply(chain_B.get_atoms())
+    return float(sup.rms)
+
+
 
 def get_tool_from_structure_name(structure_name: str) -> str:
     """
@@ -62,7 +67,6 @@ def get_tool_from_structure_name(structure_name: str) -> str:
     return "UNKNOWN_tool" # Fallback if format doesn't match
 
 
-from itertools import combinations_with_replacement
 
 def compute_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
     # Normalize tool names
@@ -83,7 +87,7 @@ def compute_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
     for t1, t2 in combinations_with_replacement(tools, 2):
         label = f"{min(t1, t2)}-{max(t1, t2)}"
         subset = rmsd_df[rmsd_df["tool_pair"] == label]
-        rmsds = subset["protein_rmsd"].dropna().tolist()
+        rmsds = subset["ProteinRMSD"].dropna().tolist()
 
         all_pairwise_rmsds.extend(rmsds)
 
@@ -137,7 +141,6 @@ def compute_entrywise_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
 
 
 
-
 def visualize_rmsd_by_entry(rmsd_df, output_dir="proteinRMSD_heatmaps"):
     '''
     Visualizes RMSD values as heatmaps for each entry in the resulting dataframe.
@@ -188,6 +191,8 @@ class ProteinRMSD(Step):
 
             # Process all PDB files in subdirectories
             for pdb_file_path in sub_dir.glob("*.pdb"):
+                if not pdb_file_path.exists():
+                    print(f"File does not exist: {pdb_file_path}")
 
                 rmsd = compute_proteinrmsd(pdb_file_path)  # Compute protein RMSD for the PDB file
 
@@ -222,7 +227,7 @@ class ProteinRMSD(Step):
  
         # Build the main RMSD DataFrame
         rmsd_df = pd.DataFrame(rmsd_values)
-
+        
         # Compute per-entry tool pair statistics
         entry_pair_stats = compute_entrywise_tool_pair_stats(rmsd_df)
 
@@ -241,7 +246,7 @@ class ProteinRMSD(Step):
         if self.visualize_heatmaps:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             visualize_rmsd_by_entry(rmsd_df, output_dir=self.output_dir)
-
+        
         return rmsd_df
 
 

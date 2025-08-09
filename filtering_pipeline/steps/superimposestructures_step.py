@@ -28,12 +28,30 @@ def get_structure(type, file):
     return structure
 
 
-def extract_ligand(structure):
-    # Apply filters: select non-amino acids and non-solvents (ligands)
+
+def extract_ligands(structure):
+    """
+    Extract ligands from a Biotite structure (AtomArray or AtomArrayStack).
+    """
+    if not isinstance(structure, (struc.AtomArray, struc.AtomArrayStack)):
+        return []
+
+    # Identify ligand atoms
     is_ligand = ~struc.filter_amino_acids(structure) & ~struc.filter_solvent(structure)
-    
-    # Return only the ligand atoms from the structure
-    return structure[is_ligand]
+    if not is_ligand.any():
+        return []
+
+    ligands = structure[is_ligand]
+    ligand_structures = []
+
+    # Use both res_id and chain_id for uniqueness
+    unique_residues = set(zip(ligands.chain_id, ligands.res_id))
+    for chain_id, res_id in unique_residues:
+        mask = (ligands.chain_id == chain_id) & (ligands.res_id == res_id)
+        ligand_structures.append(ligands[mask].copy())
+
+    return ligand_structures
+
 
 
 def extract_monomer(complex):
@@ -71,97 +89,6 @@ def get_residue_ids(structure):
     """Returns a set of (res_id, ins_code) for each residue."""
     return set(zip(structure.res_id, structure.ins_code))
 
-
-def write_structure_to_file(combined, output_dir, entry_name, key1, key2):
-    
-    # Create output directory 
-    output_dir = Path(output_dir) / entry_name
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Specify output path
-    key = f"{key1}__{key2}"
-    output_path = output_dir / f"{key}.pdb"
-
-    # Write the combined structure to a PDB file
-    pdb_file = pdb.PDBFile()
-    pdb_file.set_structure(combined)
-    pdb_file = clean_pdb_atom_names(pdb_file)
-    with open(output_path, "w") as f:
-        pdb_file.write(f)
-    return str(output_path)
-
-
-
-def write_structure_to_file(combined, output_dir, entry_name, key1, key2):
-    output_dir = Path(output_dir) / entry_name
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    key = f"{key1}__{key2}"
-    output_path = output_dir / f"{key}.pdb"
-
-    pdb_file = pdb.PDBFile()
-    pdb_file.set_structure(combined)
-    pdb_file = clean_pdb_atom_names(pdb_file)
-
-    # Convert to lines
-    pdb_lines = pdb_file.get_lines()
-
-    # Insert 'TER' between chains
-    result_lines = []
-    prev_chain = None
-    for line in pdb_lines:
-        if line.startswith(('ATOM', 'HETATM')):
-            chain_id = line[21]
-            if prev_chain is not None and chain_id != prev_chain:
-                result_lines.append(f"TER   {len(result_lines)+1:5d}")
-            prev_chain = chain_id
-        result_lines.append(line)
-
-    # Always end with END
-    result_lines.append("END")
-
-    with open(output_path, "w") as f:
-        f.write('\n'.join(result_lines) + '\n')
-
-    return str(output_path)
-
-
-
-def write_structure_to_file(combined, output_dir, entry_name, key1, key2):
-    output_dir = Path(output_dir) / entry_name
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    key = f"{key1}__{key2}"
-    output_path = output_dir / f"{key}.pdb"
-
-    pdb_file = pdb.PDBFile()
-    pdb_file.set_structure(combined)
-    pdb_file = clean_pdb_atom_names(pdb_file)
-
-    # Convert to lines
-    from io import StringIO
-    buffer = StringIO()
-    pdb_file.write(buffer)
-    pdb_lines = buffer.getvalue().splitlines()
-
-    # Insert 'TER' between chains
-    result_lines = []
-    prev_chain = None
-    for line in pdb_lines:
-        if line.startswith(('ATOM', 'HETATM')):
-            chain_id = line[21]
-            if prev_chain is not None and chain_id != prev_chain:
-                result_lines.append(f"TER   {len(result_lines)+1:5d}")
-            prev_chain = chain_id
-        result_lines.append(line)
-
-    # Always end with END
-    result_lines.append("END")
-
-    with open(output_path, "w") as f:
-        f.write('\n'.join(result_lines) + '\n')
-
-    return str(output_path)
 
 
 def write_structure_to_file(combined, output_dir, entry_name, key1, key2):
@@ -228,21 +155,31 @@ def superimpose_within_same_docked_structure(protein_dict, ligand_dict, entry_na
             key1, key2 = keys[i], keys[j]
             try: 
                 ref_structure = protein_dict[key1]
-                ref_ligand = ligand_dict[key1]
+                ref_ligands = ligand_dict[key1]
                 mov_structure = protein_dict[key2]
-                mov_ligand = ligand_dict[key2]
+                mov_ligands = ligand_dict[key2]
 
                 aligned, transform, _, _ = struc.superimpose_homologs(ref_structure, mov_structure)
                 aligned.chain_id[:] = "B"
-                ligand_aligned = transform.apply(mov_ligand)
-                ligand_aligned.chain_id[:] = "L"
-                ligand_aligned.res_id[:] = 2 
 
                 ref_structure.chain_id[:] = "A"
-                ref_ligand.chain_id[:] = "T"
-                ref_ligand.res_id[:] = 1
+                all_structures = [ref_structure, aligned]
 
-                combined = struc.concatenate([ref_structure, aligned, ref_ligand, ligand_aligned])
+                for i, lig in enumerate(ref_ligands):
+                    lig = lig.copy()
+                    lig.chain_id[:] = chr(84 + i)
+                    lig.res_id[:] = i + 1
+                    all_structures.append(lig)
+
+
+                for i, lig in enumerate(mov_ligands):
+                    lig_aligned = transform.apply(lig.copy())
+                    lig_aligned.chain_id[:] = chr(76 + i)
+                    lig_aligned.res_id[:] = i + len(ref_ligands) + 1
+                    all_structures.append(lig_aligned)
+
+
+                combined = struc.concatenate(all_structures)
                 combined = truncate_residue_names(combined)
                 combined = truncate_atom_names(combined)
 
@@ -254,47 +191,45 @@ def superimpose_within_same_docked_structure(protein_dict, ligand_dict, entry_na
     return output_paths
 
 
-def superimpose_different_docked_structure(protein_1_dict, ligand_1_dict, protein_2_dict, ligand_2_dict, entry_name, output_dir):
 
+def superimpose_different_docked_structure(protein_1_dict, ligand_1_dict, protein_2_dict, ligand_2_dict, entry_name, output_dir):
     output_paths = []
 
     for structure1_key, protein_1_structure in protein_1_dict.items():
         protein_1_structure.chain_id[:] = "A"
-        ligand1 = ligand_1_dict[structure1_key]
-        ligand1.res_id[:] = 1
-        ligand1.chain_id[:] = "T"
+        ligands1 = ligand_1_dict[structure1_key]
 
         for structure2_key, protein_2_structure in protein_2_dict.items():
-            
             try:
-                # Superimpose structure 2 onto structure 1
                 structure2_aligned, transform, _, _ = struc.superimpose_homologs(protein_1_structure, protein_2_structure)
-                structure2_aligned.chain_id[:] = "B"            
-                            
-                # Align ligands of structure 1 using the same transformation
-                ligand2 = ligand_2_dict[structure2_key] 
-                ligand2_aligned = transform.apply(ligand2)  # Apply the transformation
-                ligand2_aligned.chain_id[:] = "V"
-                ligand2_aligned.res_id[:] = 2
+                structure2_aligned.chain_id[:] = "B"
 
-                
-                combined = struc.concatenate([
-                    protein_1_structure,
-                    structure2_aligned, 
-                    ligand2_aligned, 
-                    ligand1
-                ])
-                
+                ligands2 = ligand_2_dict[structure2_key]
+
+                all_structures = [protein_1_structure, structure2_aligned]
+
+                for i, lig in enumerate(ligands1):
+                    lig = lig.copy()
+                    lig.chain_id[:] = chr(84 + i)
+                    lig.res_id[:] = i + 1
+                    all_structures.append(lig)
+
+                for i, lig in enumerate(ligands2):
+                    lig_aligned = transform.apply(lig.copy())
+                    lig_aligned.chain_id[:] = chr(86 + i)
+                    lig_aligned.res_id[:] = i + len(ligands1) + 1
+                    all_structures.append(lig_aligned)
+
+                combined = struc.concatenate(all_structures)
                 combined = truncate_residue_names(combined)
                 combined = truncate_atom_names(combined)
 
                 output_paths.append(write_structure_to_file(combined, output_dir, entry_name, structure1_key, structure2_key))
-                    
+
             except Exception as e:
                 print(f"Failed {entry_name} {structure1_key} vs {structure2_key}: {e}")
-            
-    return output_paths
 
+    return output_paths
 
 
 class SuperimposeStructures(Step):
@@ -331,9 +266,8 @@ class SuperimposeStructures(Step):
                         key = structure_1_path.stem
                         pdb_data = pdb.PDBFile.read(f)
                         full_structure = pdb.get_structure(pdb_data, model=1)
-                        ligand = extract_ligand(full_structure)
                         structure_1[key] = extract_monomer(full_structure)
-                        structure_1_ligands[key] = ligand
+                        structure_1_ligands[key] = extract_ligands(full_structure)
                 except Exception as e:
                     logger.error(f"Error processing {structure_1_path}: {e}")
 
@@ -348,9 +282,8 @@ class SuperimposeStructures(Step):
                         key = structure_2_path.stem
                         pdb_data = pdb.PDBFile.read(f)
                         full_structure = pdb.get_structure(pdb_data, model=1)
-                        ligand = extract_ligand(full_structure)
                         structure_2[key] = extract_monomer(full_structure)
-                        structure_2_ligands[key] = ligand
+                        structure_2_ligands[key] = extract_ligands(full_structure)
                 except Exception as e:
                     logger.error(f"Error processing {structure_2_path}: {e}")
 

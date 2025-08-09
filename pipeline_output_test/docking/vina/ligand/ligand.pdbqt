@@ -1,0 +1,16 @@
+REMARK SMILES [N-]=[N+]=C1CCOC1=O
+REMARK SMILES IDX 3 1 4 2 5 3 6 4 7 5 8 6 2 7 1 8
+REMARK H PARENT
+ROOT
+ATOM      1  C   LIG     1       0.739   0.021  -0.274  1.00  0.00     0.379 C 
+ATOM      2  C   LIG     1      -0.475  -0.771  -0.451  1.00  0.00     0.178 C 
+ATOM      3  C   LIG     1      -1.327  -0.073   0.592  1.00  0.00     0.246 C 
+ATOM      4  O   LIG     1      -0.798   1.253   0.778  1.00  0.00    -0.456 OA
+ATOM      5  C   LIG     1       0.495   1.312   0.378  1.00  0.00     0.417 C 
+ATOM      6  O   LIG     1       1.290   2.214   0.486  1.00  0.00    -0.238 OA
+ENDROOT
+BRANCH   1   7
+ATOM      7  N   LIG     1       1.949  -0.300  -0.645  1.00  0.00    -0.164 N 
+ATOM      8  N   LIG     1       2.993  -0.616  -0.977  1.00  0.00    -0.361 NA
+ENDBRANCH   1   7
+TORSDOF 1

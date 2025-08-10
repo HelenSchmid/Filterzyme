@@ -8,7 +8,7 @@ from filtering_pipeline.pipeline import Superimposition
 from filtering_pipeline.pipeline import GeometricFilters
 
 
-df = pd.read_pickle('/nvme2/helen/masterthesis/3_manuscript/DB_pipeline_short_enzymes.pkl')
+df = pd.read_pickle('/nvme2/helen/masterthesis/3_manuscript/DB_pipeline_short_enzymes_vina_only.pkl')
 
 if __name__ == "__main__":
 
@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     )
 
-    
+
 
     superimposition = Superimposition(
     maxMatches = 1000,
@@ -33,5 +33,5 @@ if __name__ == "__main__":
     output_dir = Path('pipeline_output_test/superimposition')
     )
 
-    #pipeline.run()
+    pipeline.run()
 

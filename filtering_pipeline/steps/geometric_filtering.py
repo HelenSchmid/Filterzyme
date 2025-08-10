@@ -431,10 +431,8 @@ def calculate_burgi_dunitz_angle(atom_nu_coords, atom_c_coords, atom_o_coords):
 
 class GeometricFiltering(Step):
 
-    def __init__(self, ligand_smiles: str= '', smarts_pattern: str = '', preparedfiles_dir: str = '', esterase = 0, find_closest_nucleophile = 0, output_dir: str= ''):
+    def __init__(self, preparedfiles_dir: str = '', esterase = 0, find_closest_nucleophile = 0, output_dir: str= ''):
         
-        self.ligand_smiles = ligand_smiles
-        self.smarts_pattern = smarts_pattern
         self.esterase = esterase
         self.find_closest_nuc = find_closest_nucleophile
         self.output_dir = Path(output_dir)

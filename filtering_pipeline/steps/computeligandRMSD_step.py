@@ -515,6 +515,9 @@ class LigandRMSD(Step):
         for sub_dir in self.input_dir.iterdir():
             print(f"Processing entry: {sub_dir.name}")
 
+            # Get substrate_smiles for entry
+            substrate_smiles = df.loc[df[self.entry_col] == sub_dir.name, "substrate_smiles"].iloc[0]
+
             # Process all PDB files in subdirectories
             for pdb_file_path in sub_dir.glob("*.pdb"):
 
@@ -523,7 +526,7 @@ class LigandRMSD(Step):
 
                 # Extract ligands as RDKit mol objects
                 ligands = [extract_chain_as_rdkit_mol(pdb_file_path, chain_id, sanitize=False) for chain_id in chain_ids]
-                filtered_ligands = filter_ligands_by_element_composition(ligands, self.ligand_of_interest_smiles)
+                filtered_ligands = filter_ligands_by_element_composition(ligands, substrate_smiles)
 
                 if len(filtered_ligands) > 2:
                     print('More than 2 ligands were found matching the smile string.')

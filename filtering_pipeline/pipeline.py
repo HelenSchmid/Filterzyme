@@ -66,9 +66,18 @@ class Docking:
 
     def _catalytic_residue_prediction(self):
         self.df['Sequence'] = self.df['Sequence'].apply(clean_protein_sequence)
-        df_unique_sequences = self.df.drop_duplicates(subset='Sequence', keep='first')
-        df_cat_res = df_unique_sequences << ActiveSitePred('Entry', 'Sequence', self.squidly_dir, self.num_threads)
-        df_squidly = pd.merge(self.df, df_cat_res, left_on='Entry', right_on='label', how='inner')
+
+        reps  = (self.df[['Entry','Sequence']]
+            .drop_duplicates(subset='Sequence', keep='first')
+            .rename(columns={'Entry': 'rep_entry'}))
+        pred_in = reps.rename(columns={'rep_entry': 'Entry'})
+        
+        df_cat_res = pred_in << ActiveSitePred('Entry', 'Sequence', self.squidly_dir, self.num_threads)
+        df_cat_res = df_cat_res.merge(reps, left_on='label', right_on='rep_entry', how='left')
+
+        df_squidly = self.df.merge(
+        df_cat_res[['Sequence', 'Squidly_CR_Position']].drop_duplicates('Sequence'),
+        on='Sequence', how='left' )
 
         # Remove entries without catalytic residues for proteins without user-specified residues for vina-docking
         if 'vina_residues' not in df_squidly.columns:

@@ -79,10 +79,8 @@ class Docking:
             log_boxed_note('Removing entries without catalytic residues and without specified residues for vina docking: ' + ', '.join(empty_entries))
         df_squidly = df_squidly[~mask_empty].reset_index(drop=True)
 
-        df_squidly['catalytic_residues'] = df_squidly['vina_residues'].where(
-            df_squidly['vina_residues'].astype(bool),
-            df_squidly['Squidly_CR_Position']
-        )
+        mask = df_squidly['vina_residues'].notna() & (df_squidly['vina_residues'] != '')
+        df_squidly['catalytic_residues'] = df_squidly['vina_residues'].where(mask, df_squidly['Squidly_CR_Position'])
 
         output_path = os.path.join(self.output_dir, 'squidly.pkl')
         df_squidly.to_pickle(output_path)

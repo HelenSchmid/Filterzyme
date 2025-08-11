@@ -1,0 +1,32 @@
+REMARK SMILES CC/C=C(\O[Si](C)(C)C)c1ccccc1
+REMARK SMILES IDX 4 1 3 2 2 3 1 4 10 5 11 6 15 7 12 8 14 9 13 10 5 11 6 12
+REMARK SMILES IDX 7 13 8 14 9 15
+REMARK H PARENT
+ROOT
+ATOM      1  C   LIG     1       0.757   0.613   0.262  1.00  0.00     0.106 C 
+ENDROOT
+BRANCH   1   2
+ATOM      2  C   LIG     1       1.529   1.649  -0.117  1.00  0.00     0.018 C 
+BRANCH   2   3
+ATOM      3  C   LIG     1       1.178   3.087  -0.388  1.00  0.00     0.028 C 
+ATOM      4  C   LIG     1      -0.251   3.553  -0.161  1.00  0.00     0.008 C 
+ENDBRANCH   2   3
+ENDBRANCH   1   2
+BRANCH   1   5
+ATOM      5  C   LIG     1       1.391  -0.684   0.584  1.00  0.00     0.015 A 
+ATOM      6  C   LIG     1       1.264  -1.223   1.872  1.00  0.00     0.012 A 
+ATOM      7  C   LIG     1       2.121  -1.394  -0.380  1.00  0.00     0.012 A 
+ATOM      8  C   LIG     1       1.852  -2.450   2.189  1.00  0.00     0.001 A 
+ATOM      9  C   LIG     1       2.709  -2.620  -0.062  1.00  0.00     0.001 A 
+ATOM     10  C   LIG     1       2.573  -3.147   1.221  1.00  0.00     0.000 A 
+ENDBRANCH   1   5
+BRANCH   1  11
+ATOM     11  O   LIG     1      -0.589   0.748   0.542  1.00  0.00    -0.544 OA
+BRANCH  11  12
+ATOM     12  Si  LIG     1      -1.750  -0.111  -0.323  1.00  0.00     0.242 Si
+ATOM     13  C   LIG     1      -1.933  -1.878   0.291  1.00  0.00     0.034 C 
+ATOM     14  C   LIG     1      -3.426   0.738  -0.111  1.00  0.00     0.034 C 
+ATOM     15  C   LIG     1      -1.364  -0.147  -2.166  1.00  0.00     0.034 C 
+ENDBRANCH  11  12
+ENDBRANCH   1  11
+TORSDOF 5

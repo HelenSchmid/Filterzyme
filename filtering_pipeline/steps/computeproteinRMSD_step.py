@@ -205,12 +205,6 @@ class ProteinRMSD(Step):
 
                 entry_name = sub_dir.name 
 
-                mask = df[self.entry_col].str.strip() == entry_name.strip()
-                if 'Squidly_CR_Position' in df.columns and mask.any():
-                    squidly_residues = df.loc[mask, 'Squidly_CR_Position'].iat[0]
-                else:
-                    squidly_residues = ""
-
                 tool1_name = get_tool_from_structure_name(docked_structure1_name)
                 tool2_name  = get_tool_from_structure_name(docked_structure2_name)
 
@@ -221,7 +215,6 @@ class ProteinRMSD(Step):
                     'docked_structure2' : docked_structure2_name, 
                     'tool1' : tool1_name, 
                     'tool2': tool2_name,
-                    'Squidly_CR_Position': squidly_residues,
                     'proteinRMSD': rmsd,   # Store the calculated RMSD value
                 })
  
@@ -246,6 +239,9 @@ class ProteinRMSD(Step):
         if self.visualize_heatmaps:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             visualize_rmsd_by_entry(rmsd_df, output_dir=self.output_dir)
+
+        # Merge with the original df to keep metadata
+        rmsd_df = pd.merge(df, rmsd_df, on='Entry', how='left')
         
         return rmsd_df
 

@@ -9,14 +9,11 @@ import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import os 
 from collections import defaultdict
-
-from filtering_pipeline.steps.step import Step
-from filtering_pipeline.utils.helpers import clean_plt
-
 from rdkit import Chem
 from rdkit.Chem import rdMolAlign
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, DataStructs
 from rdkit.Geometry import Point3D
+from collections import Counter
 from Bio import PDB
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
@@ -27,6 +24,9 @@ from openbabel import openbabel as ob
 from openbabel import pybel
 from io import StringIO
 import tempfile
+
+from filtering_pipeline.steps.step import Step
+from filtering_pipeline.utils.helpers import clean_plt
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -52,6 +52,7 @@ def get_hetatm_chain_ids(pdb_path):
     ligand_only_chains = hetatm_chains - atom_chains
 
     return list(ligand_only_chains)
+
 
 def extract_chain_as_rdkit_mol(pdb_path, chain_id, sanitize=False):
     '''
@@ -86,151 +87,6 @@ def extract_chain_as_rdkit_mol(pdb_path, chain_id, sanitize=False):
     mol = Chem.MolFromPDBBlock(pdb_str, sanitize=sanitize)
 
     return mol
-
-
-from rdkit import Chem
-
-def filter_mol_by_smiles(mol, target_smiles: str) -> Chem.Mol | None:
-    """
-    Return the input RDKit Mol only if its canonical SMILES matches the target SMILES.
-
-    Parameters:
-    - mol: RDKit Mol object
-    - target_smiles: SMILES string to match
-
-    Returns:
-    - mol if it matches, else None
-    """
-    if mol is None:
-        print('mol is none')
-        return None
-
-    try:
-        Chem.SanitizeMol(mol)
-        mol = Chem.RemoveHs(mol)
-    except Exception as e:
-        print(f"Sanitization failed: {e}")
-        return None
-
-    try:
-        mol_smiles = Chem.MolToSmiles(mol, canonical=True)
-        target_smiles_canon = Chem.MolToSmiles(Chem.MolFromSmiles(target_smiles), canonical=True)
-    except Exception as e:
-        print(f"SMILES conversion failed: {e}")
-        return None
-
-    if mol_smiles == target_smiles_canon:
-        return mol
-    else:
-        print('doesnt match')
-        return None
-
-from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs
-
-def filter_mol_by_similarity(mol, target_smiles: str, threshold: float = 0.85) -> Chem.Mol | None:
-    """
-    Return the input RDKit Mol only if it is similar to the target SMILES.
-
-    Parameters:
-    - mol: RDKit Mol object
-    - target_smiles: SMILES string to match against
-    - threshold: Tanimoto similarity threshold (default = 0.85)
-
-    Returns:
-    - mol if similarity >= threshold, else None
-    """
-    if mol is None:
-        print("Mol is None")
-        return None
-
-    try:
-        Chem.SanitizeMol(mol)
-        mol = Chem.RemoveHs(mol)
-    except Exception as e:
-        print(f"Sanitization failed: {e}")
-        return None
-
-    try:
-        target_mol = Chem.MolFromSmiles(target_smiles)
-        if target_mol is None:
-            print("Failed to parse target SMILES.")
-            return None
-        target_mol = Chem.RemoveHs(target_mol)
-    except Exception as e:
-        print(f"Target SMILES parsing failed: {e}")
-        return None
-
-    # Compute Morgan fingerprints
-    fp_mol = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
-    fp_target = AllChem.GetMorganFingerprintAsBitVect(target_mol, radius=2, nBits=2048)
-
-    # Compute Tanimoto similarity
-    similarity = DataStructs.TanimotoSimilarity(fp_mol, fp_target)
-    print(f"Similarity = {similarity:.3f}")
-
-    if similarity >= threshold:
-        return mol
-    else:
-        print("Similarity below threshold")
-        return None
-
-
-def get_mcs_similarity(mol1, mol2) -> float:
-    """
-    Returns the fraction of atoms in the MCS over the average atom count of the two molecules.
-    Ignores bond order by setting bond comparison to CompareAny.
-    """
-    if mol1 is None or mol2 is None:
-        return 0.0
-
-    try:
-        res = rdFMCS.FindMCS(
-            [mol1, mol2],
-            bondCompare=rdFMCS.BondCompare.CompareAny,
-            ringMatchesRingOnly=True,
-            completeRingsOnly=True,
-            timeout=5
-        )
-        if res.canceled:
-            return 0.0
-
-        mcs_mol = Chem.MolFromSmarts(res.smartsString)
-        if mcs_mol is None:
-            return 0.0
-
-        mcs_atoms = mcs_mol.GetNumAtoms()
-        avg_atoms = 0.5 * (mol1.GetNumAtoms() + mol2.GetNumAtoms())
-        return mcs_atoms / avg_atoms
-    except Exception as e:
-        print(f"MCS similarity failed: {e}")
-        return 0.0
-
-def filter_mol_by_connectivity(mol, target_smiles: str, threshold: float = 0.8) -> Chem.Mol | None:
-    """
-    Keep the molecule if its topology matches the target SMILES based on MCS similarity.
-    """
-    if mol is None:
-        return None
-
-    try:
-        mol = Chem.RemoveHs(mol)
-        Chem.SanitizeMol(mol)
-    except Exception:
-        return None
-
-    try:
-        target_mol = Chem.MolFromSmiles(target_smiles)
-        if target_mol is None:
-            return None
-        target_mol = Chem.RemoveHs(target_mol)
-        Chem.SanitizeMol(target_mol)
-    except Exception:
-        return None
-
-    sim = get_mcs_similarity(mol, target_mol)
-    print(f"MCS connectivity similarity: {sim:.2f}")
-    return mol if sim >= threshold else None
 
 
 def visualize_rmsd_by_entry(rmsd_df, output_dir="ligandRMSD_heatmaps"):
@@ -453,10 +309,6 @@ def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(best_structures)
 
 
-
-from rdkit import Chem
-from collections import Counter
-
 def atom_composition_fingerprint(mol):
     """
     Returns a Counter of atom symbols in the molecule (e.g., {'C': 10, 'N': 2}).
@@ -464,43 +316,57 @@ def atom_composition_fingerprint(mol):
     return Counter([atom.GetSymbol() for atom in mol.GetAtoms()])
 
 
-def filter_ligands_by_element_composition(ligand_mols, reference_smiles):
+def _norm_l1_dist(fp_a, fp_b, keys=None):
+    """
+    Normalized L1 distance on element counts. Used to pick the closest element-count vector
+    of all ligands to the reference ligand. 
+    """
+    if keys is None:
+        keys = set(fp_a) | set(fp_b)
+    num = 0.0
+    den = 0.0
+    for k in keys:
+        a = fp_a.get(k, 0)
+        b = fp_b.get(k, 0)
+        num += abs(a - b)
+        den += a + b
+    return 0.0 if den == 0 else num / den
+
+
+def closest_ligands_by_element_composition(ligand_mols, reference_smiles, include_h=False, top_k = 2):
     """
     Filters a list of RDKit Mol objects based on atom element composition
-    matching a reference SMILES.
-
-    Parameters:
-    - ligand_mols: List of RDKit Mol objects (unsanitized is OK)
-    - reference_smiles: SMILES string of the reference ligand
-
-    Returns:
-    - List of Mol objects from ligand_mols that match the element composition
+    matching a reference SMILES. It returns a mol object that matches the element composition. 
+    Because sometimes some atoms especially hydrogens can get lost in conversions, I pick the ligand
+    with the closest atom composition to the reference; doesn't have to match perfectly. 
     """
     ref_mol = Chem.MolFromSmiles(reference_smiles)
     if ref_mol is None:
         raise ValueError("Reference SMILES could not be parsed.")
 
+    # calculate atom composition of the reference smile string i.e. the ligand of interest
     ref_fp = atom_composition_fingerprint(ref_mol)
 
-    matching_ligands = []
+    out = []
     for mol in ligand_mols:
         if mol is None:
             continue
         try:
             fp = atom_composition_fingerprint(mol)
-            if fp == ref_fp:
-                matching_ligands.append(mol)
+            dist = _norm_l1_dist(ref_fp, fp)
+            score = 1.0 - dist
+            out.append((mol, score))
         except Exception as e:
             print(f"Error processing ligand: {e}")
             continue
-
-    return matching_ligands
+    # return closest matching lgiands
+    out.sort(key=lambda t: t[1], reverse=True)
+    return [mol for mol, _ in out[:top_k]]
 
 
 class LigandRMSD(Step):
-    def __init__(self, entry_col = 'Entry', ligand_of_interest_smiles: str = '', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 
+    def __init__(self, entry_col = 'Entry', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False, maxMatches = 1000): 
         self.entry_col = entry_col
-        self.ligand_of_interest_smiles = ligand_of_interest_smiles
         self.input_dir = Path(input_dir)   
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -525,12 +391,17 @@ class LigandRMSD(Step):
                 chain_ids = get_hetatm_chain_ids(pdb_file_path)
 
                 # Extract ligands as RDKit mol objects
-                ligands = [extract_chain_as_rdkit_mol(pdb_file_path, chain_id, sanitize=False) for chain_id in chain_ids]
-                filtered_ligands = filter_ligands_by_element_composition(ligands, substrate_smiles)
+                ligands = []
+                for chain_id in chain_ids:
+                    mol  = extract_chain_as_rdkit_mol(pdb_file_path, chain_id, sanitize=False)
+                    ligands.append(mol)
+
+                filtered_ligands = closest_ligands_by_element_composition(ligands, substrate_smiles)
 
                 if len(filtered_ligands) > 2:
                     print('More than 2 ligands were found matching the smile string.')
 
+                ligand1 = filtered_ligands[0]
                 ligand2 = filtered_ligands[1]
 
                 if ligand1 is None or ligand2 is None:
@@ -601,34 +472,24 @@ class LigandRMSD(Step):
         best_docked_structure_df = select_best_docked_structures(rmsd_df)
 
         # Merge with the original df to keep metadata
-        rmsd_df_for_merge = rmsd_df.drop(columns=['pdb_file', 'docked_structure1', 'docked_structure2', 'tool1', 'tool2'])
-        rmsd_df = pd.merge(df, rmsd_df_for_merge, on='Entry', how='left')
+        rmsd_df_for_merge = rmsd_df.drop(columns=['Entry', 'docked_structure1', 'docked_structure2', 'tool1', 'tool2'])
+        rmsd_df = pd.merge(df, rmsd_df_for_merge, on='pdb_file', how='left')
 
         # Save the RMSD DataFrame
         pkl_file = Path(self.output_dir).parent / "ligandRMSD.pkl"
         rmsd_df.to_pickle(pkl_file)
 
-        # Filter original df to only include best structures
-        columns_to_add = ['Squidly_CR_Position','Entry',
-       'chai-chai_mean_proteinRMSD', 'chai-chai_std_proteinRMSD',
-       'chai-vina_mean_proteinRMSD', 'chai-vina_std_proteinRMSD',
-       'boltz-chai_mean_proteinRMSD', 'boltz-chai_std_proteinRMSD',
-       'vina-vina_mean_proteinRMSD', 'vina-vina_std_proteinRMSD',
-       'boltz-vina_mean_proteinRMSD', 'boltz-vina_std_proteinRMSD',
-       'boltz-boltz_mean_proteinRMSD', 'boltz-boltz_std_proteinRMSD',
-       'entry_overall_mean_proteinRMSD', 'entry_overall_std_proteinRMSD', 
-       'ligand_rmsd', 'boltz_boltz_mean_ligandRMSD',
-       'boltz_boltz_std_ligandRMSD', 'boltz_chai_mean_ligandRMSD',
-       'boltz_chai_std_ligandRMSD', 'boltz_vina_mean_ligandRMSD',
-       'boltz_vina_std_ligandRMSD', 'chai_chai_mean_ligandRMSD',
-       'chai_chai_std_ligandRMSD', 'chai_vina_mean_ligandRMSD',
-       'chai_vina_std_ligandRMSD', 'vina_vina_mean_ligandRMSD',
-       'vina_vina_std_ligandRMSD', 'overall_ligandRMSD_mean',
-       'overall_ligandRMSD_std',
-       ]
         
-        rmsd_subset = rmsd_df[columns_to_add].drop_duplicates(subset="Entry")
-        merged_df = pd.merge(best_docked_structure_df, rmsd_subset[columns_to_add].drop_duplicates(), on="Entry", how="left")
+        columns_to_exclude = ['docked_structure1', 'docked_structure2', 'tool1', 'tool2', 'vina_affinities', 'chai_aggregate_score',
+       'chai_ptm', 'chai_iptm', 'chai_per_chain_ptm',
+       'chai_per_chain_pair_iptm', 'chai_has_clashes',
+       'chai_chain_chain_clashes', 'boltz2_confidence_score', 'boltz2_ptm',
+       'boltz2_iptm', 'boltz2_ligand_iptm', 'boltz2_protein_iptm',
+       'boltz2_complex_plddt', 'boltz2_complex_iplddt', 'boltz2_complex_pde',
+       'boltz2_complex_ipde', 'boltz2_chains_ptm', 'boltz2_pair_chains_iptm']
+        rmsd_subset = rmsd_df.drop(columns=columns_to_exclude)
+        rmsd_subset = rmsd_subset.drop_duplicates(subset="Entry", keep="first")
+        merged_df = pd.merge(best_docked_structure_df, rmsd_subset, on="Entry", how="left")
 
         return merged_df             
 

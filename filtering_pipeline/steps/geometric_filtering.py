@@ -231,17 +231,36 @@ def coords_of_atoms(mol, atom_indices):
     pts = [conf.GetAtomPosition(i) for i in atom_indices]
     return np.array([[p.x, p.y, p.z] for p in pts])
 
-def centroid_from_match(mol: Chem.Mol, match, confId: int = 0):
+import numpy as np
+from rdkit import Chem
+
+def centroid_from_indices(mol: Chem.Mol, atom_indices, confId: int = 0):
     """
-    Compute the 3D centroid (x,y,z) of a single substructure match ( = tuple of atom indices).
+    Accepts an int (single atom) or an iterable of atom indices.
+    Returns (x, y, z) or None.
     """
-    if mol is None or mol.GetNumConformers() == 0 or not match:
+    if mol is None or mol.GetNumConformers() == 0:
         return None
+
+    # normalize to list of ints
+    if isinstance(atom_indices, (int, np.integer)):
+        idxs = [int(atom_indices)]
+    else:
+        try:
+            idxs = [int(i) for i in atom_indices]
+        except TypeError:
+            raise TypeError(f"atom_indices must be int or iterable of ints, got {type(atom_indices)}")
+
     conf = mol.GetConformer(confId)
     pts = np.array([[conf.GetAtomPosition(i).x,
                      conf.GetAtomPosition(i).y,
-                     conf.GetAtomPosition(i).z] for i in match], dtype=float)
+                     conf.GetAtomPosition(i).z] for i in idxs], dtype=float)
     return tuple(pts.mean(axis=0))
+
+def centroids_from_matches(mol: Chem.Mol, matches, confId: int = 0):
+    return [centroid_from_indices(mol, m, confId=confId) for m in matches]
+
+
 
 def nearest_centroid_distance(A, B):
     """
@@ -593,12 +612,12 @@ class GeneralGeometricFiltering(Step):
                 ligand_match = find_substructure_matches(ligand_mol, substrate_moiety)
 
                 # Calculate ligand-moiety centroid
-                ligand_centroid = centroid_from_match(ligand_mol, ligand_match)
+                ligand_centroid = centroid_from_matches(ligand_mol, ligand_match)
 
                 if not ligand_centroid:
                     # optional fallback: whole-ligand centroid
                     logger.warning(f"Ligand-substructure centroid calculation unsuccessfull. Use whole-ligand centroid instead.")
-                    ligand_centroid = [centroid_from_match(ligand_mol, tuple(range(ligand_mol.GetNumAtoms())))]
+                    ligand_centroid = [centroid_from_matches(ligand_mol, tuple(range(ligand_mol.GetNumAtoms())))]
 
 
                 # --- Distance between ligand and cofactor ---

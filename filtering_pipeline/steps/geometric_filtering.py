@@ -4,26 +4,31 @@ from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
 import numpy as np
+import math
 import re
 from Bio.PDB import PDBIO
 from Bio.PDB import PDBParser, Select, PDBIO
+from biotite.structure.io.pdb import PDBFile
+from biotite.structure import AtomArrayStack
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, rdFMCS, rdmolops
+from rdkit.Chem.rdchem import Mol
 from rdkit.Chem.Draw import MolToImage
 from rdkit.Chem.Draw import rdMolDraw2D # You'll need this for MolDraw2DCairo/SVG
 from rdkit.Chem.Draw.rdMolDraw2D import MolDrawOptions
+from rdkit.Geometry import Point3D
 from rdkit import RDLogger
+from itertools import product
+from io import StringIO
 import tempfile
+from collections import Counter
 
 from filtering_pipeline.steps.step import Step
-
-
 
 RDLogger.DisableLog('rdApp.warning')
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
 
 # Dictionary to map residue names to their relevant atoms for catalysis or binding
 atom_selection = {
@@ -50,97 +55,205 @@ atom_selection = {
 }
 
 
-def load_pdb_structure(pdb_filepath):
+def get_hetatm_chain_ids(pdb_path):
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    structure = structure[0]
+
+    hetatm_chains = set(structure.chain_id[structure.hetero])
+    atom_chains = set(structure.chain_id[~structure.hetero])
+
+    # Exclude chains that also have ATOM records (i.e., protein chains)
+    ligand_only_chains = hetatm_chains - atom_chains
+
+    return list(ligand_only_chains)
+
+def _norm_l1_dist(fp_a, fp_b, keys=None):
     """
-    Loads a PDB structure from a given file path.
+    Normalized L1 distance on element counts. Used to pick the closest element-count vector
+    of all ligands to the reference ligand. 
     """
-    pdb_parser = PDBParser(QUIET=True)
-    try:
-        structure = pdb_parser.get_structure("prot", pdb_filepath)
-        return structure
-    except Exception as e:
-        raise IOError(f"Error loading PDB structure from {pdb_filepath}: {e}")
+    if keys is None:
+        keys = set(fp_a) | set(fp_b)
+    num = 0.0
+    den = 0.0
+    for k in keys:
+        a = fp_a.get(k, 0)
+        b = fp_b.get(k, 0)
+        num += abs(a - b)
+        den += a + b
+    return 0.0 if den == 0 else num / den
 
+def extract_chain_as_rdkit_mol(pdb_path, chain_id, sanitize=False):
+    '''
+    Extract ligand chain as RDKit mol objects given their chain ID. 
+    '''
+    # Read full structure
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    if isinstance(structure, AtomArrayStack):
+        structure = structure[0]  # first model only
 
-def extract_ligand_from_pdb(structure, ligand_smiles, ligand_resname = 'LIG'):
+    # Extract chain
+    mask = structure.chain_id == chain_id
+
+    if len(mask) != structure.array_length():
+        raise ValueError(f"Mask shape {mask.shape} doesn't match atom array length {structure.array_length()}")
+
+    chain = structure[mask]
+
+    if chain.shape[0] == 0:
+        raise ValueError(f"No atoms found for chain {chain_id} in {pdb_path}")
+
+    # Convert to PDB string using Biotite
+    temp_pdb = PDBFile()
+    temp_pdb.set_structure(chain)
+    pdb_str_io = StringIO()
+    temp_pdb.write(pdb_str_io)
+    pdb_str = pdb_str_io.getvalue()
+
+    # Convert to RDKit mol from PDB string
+    mol = Chem.MolFromPDBBlock(pdb_str, sanitize=sanitize)
+
+    return mol
+
+def atom_composition_fingerprint(mol):
     """
-    Extracts a ligand (by residue name) from a Biopython structure and saves it to a temporary PDB file.
-    Loads ligand from a PDB file into RDKit, then assigns bond orders from a provided SMILES string 
-    template to ensure correct chemical perception.
+    Returns a Counter of atom symbols in the molecule (e.g., {'C': 10, 'N': 2}).
     """
-    class LigandSelect(Select):
-        def accept_residue(self, residue):
-            return residue.get_resname().strip() == ligand_resname
+    return Counter([atom.GetSymbol() for atom in mol.GetAtoms()])
 
-    io = PDBIO()
-    io.set_structure(structure)
-
-    temp_pdb = tempfile.NamedTemporaryFile(delete=False, suffix=".pdb")
-    io.save(temp_pdb.name, LigandSelect())
-
-    # Load the PDB ligand into RDKit
-    pdb_mol = Chem.MolFromPDBFile(temp_pdb.name, removeHs=False)
-    if pdb_mol is None:
-        raise ValueError("Failed to parse ligand PDB with RDKit.")
-
-    # Create template molecule from SMILES
-    template_mol = Chem.MolFromSmiles(ligand_smiles)
-    if template_mol is None:
-        raise ValueError(f"Could not parse SMILES for template: {ligand_smiles}")
-
-    # Assign bond orders from the template to the PDB-derived molecule
-    try:
-        ligand_mol = AllChem.AssignBondOrdersFromTemplate(template_mol, pdb_mol)
-    except Exception as e:
-        print(f"WARNING: Error assigning bond orders from template: {e}")
-        print("Proceeding with PDB-parsed molecule (may have incorrect bond orders/valency).")
-        ligand_mol = pdb_mol # Fallback if assignment fails
-
-    return ligand_mol
-
-
-def find_substructure_coordinates(mol, smarts_pattern, atom_to_get_coords_idx=0):
+def closest_ligands_by_element_composition(ligand_mols, reference_smiles, include_h=False, top_k = 2):
     """
-    Finds substructure matches for a given SMARTS pattern in an RDKit molecule
-    and returns the 3D coordinates of a specified atom within each match.
-    The atom_idx for the carbonyl C and the phosphate atom are 0. 
+    Filters a list of RDKit Mol objects based on atom element composition
+    matching a reference SMILES. It returns a mol object that matches the element composition. 
+    Because sometimes some atoms especially hydrogens can get lost in conversions, I pick the ligand
+    with the closest atom composition to the reference; doesn't have to match perfectly. 
     """
+    ref_mol = Chem.MolFromSmiles(reference_smiles)
+    if ref_mol is None:
+        raise ValueError("Reference SMILES could not be parsed.")
 
-    coords_dict = {}
+    # calculate atom composition of the reference smile string i.e. the ligand of interest
+    ref_fp = atom_composition_fingerprint(ref_mol)
 
-    if mol.GetNumConformers() == 0:
-        logger.warning("Ligand molecule has no 3D conformers. Cannot get coordinates.")
-        return {}
-
-    # Compile SMARTS pattern
-    pattern = Chem.MolFromSmarts(smarts_pattern)
-    if pattern is None:
-        raise ValueError(f"Invalid SMARTS pattern: {smarts_pattern}")
-    
-    matches = mol.GetSubstructMatches(pattern)
-    label = smarts_pattern
-    coords_dict[label] = []
-
-    if not matches: 
-        logger.warning(f"There was no match found for the SMARTS {smarts_pattern}")
-        return coords_dict 
-
-    for match in matches: 
-        if atom_to_get_coords_idx >= len(match):
-            logger.warning(f"Index {atom_to_get_coords_idx} out of range in match {match}")
+    out = []
+    for mol in ligand_mols:
+        if mol is None:
             continue
+        try:
+            fp = atom_composition_fingerprint(mol)
+            dist = _norm_l1_dist(ref_fp, fp)
+            score = 1.0 - dist
+            out.append((mol, score))
+        except Exception as e:
+            print(f"Error processing ligand: {e}")
+            continue
+    # return closest matching lgiands
+    out.sort(key=lambda t: t[1], reverse=True)
+    return [mol for mol, _ in out[:top_k]]
 
-        atom_idx = match[atom_to_get_coords_idx]
-        atom = mol.GetAtomWithIdx(atom_idx)
-        conf = mol.GetConformer()
-        pos = conf.GetAtomPosition(atom_idx)
+def ensure_3d(m: Chem.Mol) -> Chem.Mol:
+    """Make sure we have a conformer (PDB usually has one; this is a fallback)."""
+    if m is None:
+        return None
+    if m.GetNumConformers() == 0:
+        m = Chem.AddHs(m)
+        AllChem.EmbedMolecule(m, randomSeed=0xf00d)
+        m = Chem.RemoveHs(m)
+    return m
 
-        coords_dict[label].append({
-            'atom': atom.GetSymbol(),
-            'coords': (pos.x, pos.y, pos.z)
-        })
+def as_mol(x):
+    # In case anything returns (mol, score) or a dict
+    if isinstance(x, Mol): return x
+    if isinstance(x, tuple) and x and isinstance(x[0], Mol): return x[0]
+    if isinstance(x, dict) and isinstance(x.get("mol"), Mol): return x["mol"]
+    return None
 
-    return coords_dict
+def assign_bond_orders_from_smiles(pdb_mol, ligand_smiles):
+    """
+    Transfer bond orders from SMILES to a PDB ligand. Ignore hydrogens and
+    stereochemistry. Assign aromaticity based on SMILES. Keep 3D coordinates. 
+    """
+    ref = Chem.MolFromSmiles(ligand_smiles)
+    if ref is None:
+        return pdb_mol
+
+    # Work on **heavy-atom graphs** only
+    ref0 = Chem.RemoveHs(ref)                
+    pdb0 = Chem.RemoveHs(Chem.Mol(pdb_mol), sanitize=False)  
+
+    # Kekulize template to transfer explicit single/double bonds
+    ref0_kek = Chem.Mol(ref0)
+    rdmolops.Kekulize(ref0_kek, clearAromaticFlags=True)
+
+    try:
+        # Assign bond orders on the heavy-atom PDB ligand
+        new0 = AllChem.AssignBondOrdersFromTemplate(ref0_kek, pdb0)
+
+        # Drop all stereochemistry (you said you don't want it)
+        Chem.RemoveStereochemistry(new0)
+
+        # Recompute aromaticity from assigned bonds
+        Chem.SanitizeMol(
+            new0,
+            sanitizeOps=Chem.SanitizeFlags.SANITIZE_SYMMRINGS
+                      | Chem.SanitizeFlags.SANITIZE_SETCONJUGATION
+                      | Chem.SanitizeFlags.SANITIZE_SETAROMATICITY
+        )
+
+        # Restore the original 3D conformer
+        if pdb_mol.GetNumConformers():
+            conf = pdb0.GetConformer() if pdb0.GetNumConformers() else pdb_mol.GetConformer()
+            new0.RemoveAllConformers()
+            new0.AddConformer(conf, assignId=True)
+
+        return new0  # heavy-atom ligand with correct bond orders & arom, no stereo
+
+    except Exception as e:
+        print("AssignBondOrdersFromTemplate failed:", e)
+        return pdb_mol
+
+def find_substructure_matches(mol, sub, is_smarts=False, use_chirality=False):
+    """
+    sub: SMILES (default) or SMARTS (if is_smarts=True).
+    Returns list of tuples of atom indices.
+    """
+    q = Chem.MolFromSmarts(sub) if is_smarts else Chem.MolFromSmiles(sub)
+    if q is None:
+        raise ValueError("Could not parse substructure pattern.")
+    return list(mol.GetSubstructMatches(q, useChirality=use_chirality, uniquify = True))
+
+def coords_of_atoms(mol, atom_indices):
+    conf = mol.GetConformer()
+    pts = [conf.GetAtomPosition(i) for i in atom_indices]
+    return np.array([[p.x, p.y, p.z] for p in pts])
+
+def centroid_from_match(mol: Chem.Mol, match, confId: int = 0):
+    """
+    Compute the 3D centroid (x,y,z) of a single substructure match ( = tuple of atom indices).
+    """
+    if mol is None or mol.GetNumConformers() == 0 or not match:
+        return None
+    conf = mol.GetConformer(confId)
+    pts = np.array([[conf.GetAtomPosition(i).x,
+                     conf.GetAtomPosition(i).y,
+                     conf.GetAtomPosition(i).z] for i in match], dtype=float)
+    return tuple(pts.mean(axis=0))
+
+def nearest_centroid_distance(A, B):
+    """
+    Smallest pairwise distance between two centroid lists A and B (each list of (x,y,z)).
+    """
+    if not A or not B:
+        return None
+    A = np.array(A, float); B = np.array(B, float)
+    D = np.sqrt(((A[:, None, :] - B[None, :, :])**2).sum(axis=2))
+    return float(D.min())
+
+
 
 
 def get_squidly_residue_atom_coords(pdb_path: str, residue_id_str: str):
@@ -186,7 +299,6 @@ def get_squidly_residue_atom_coords(pdb_path: str, residue_id_str: str):
 
     return matching_residues
 
-
 def filter_residue_atoms(residue_atom_dict, atom_selection_map = atom_selection):
     """
     Filters the atom coordinates of specific atoms for each residue type.
@@ -210,7 +322,6 @@ def filter_residue_atoms(residue_atom_dict, atom_selection_map = atom_selection)
                     filtered[residue_key].append(atom)
 
     return filtered
-
 
 def find_min_distance(ester_dict, squidly_dict): 
     """
@@ -245,7 +356,6 @@ def find_min_distance(ester_dict, squidly_dict):
 
     return closest_info
 
-
 def find_min_distance_per_squidly(ester_dict, squidly_dict):
     closest_by_residue = {}
 
@@ -277,7 +387,6 @@ def find_min_distance_per_squidly(ester_dict, squidly_dict):
             closest_by_residue[nuc_res] = closest_info
 
     return closest_by_residue
-
 
 def get_all_nucs_atom_coords(pdb_path: str):
     """
@@ -327,7 +436,6 @@ def get_all_nucs_atom_coords(pdb_path: str):
 
     return matching_residues
 
-
 def filter_nucleophilic_residues(residue_atom_dict):
     """
     Filters input residues and returns only those that contain known nucleophilic atoms as a dictionary.
@@ -342,7 +450,6 @@ def filter_nucleophilic_residues(residue_atom_dict):
             filtered[residue_id] = atoms
 
     return filtered
-
 
 def calculate_residue_ligand_distance(ligand_group_dict, residue_dict): 
     """
@@ -377,7 +484,6 @@ def calculate_residue_ligand_distance(ligand_group_dict, residue_dict):
                         }
     return closest_info
 
-
 def calculate_dihedral_angle(p1, p2, p3, p4):
     """
     Calculates the dihedral angle between four 3D points.
@@ -398,7 +504,6 @@ def calculate_dihedral_angle(p1, p2, p3, p4):
     y = np.dot(np.cross(b1, v), w)
 
     return np.degrees(np.arctan2(y, x))
-
 
 def calculate_burgi_dunitz_angle(atom_nu_coords, atom_c_coords, atom_o_coords):
     """
@@ -429,10 +534,9 @@ def calculate_burgi_dunitz_angle(atom_nu_coords, atom_c_coords, atom_o_coords):
     return angle_deg
 
 
-class GeometricFiltering(Step):
+class GeneralGeometricFiltering(Step):
 
     def __init__(self, preparedfiles_dir: str = '', esterase = 0, find_closest_nucleophile = 0, output_dir: str= ''):
-        
         self.esterase = esterase
         self.find_closest_nuc = find_closest_nucleophile
         self.output_dir = Path(output_dir)
@@ -451,36 +555,86 @@ class GeometricFiltering(Step):
             entry_name = row['Entry']
             best_structure_name = row['best_structure']
             squidly_residues = str(row['Squidly_CR_Position'])
+            substrate_smiles = row['substrate_smiles']
+            cofactor_smiles = row['cofactor_smiles']
+            substrate_moiety = row['substrate_moiety']
+            cofactor_moiety = row['cofactor_moiety']
             row_result = {}
 
             default_result = {
+                'distance_ligand_to_cofactor': None, 
                 'distance_ligand_to_squidly_residues': None,
                 'distance_ligand_to_closest_nuc': None,
                 'Bürgi–Dunitz_angle_to_squidly_residue': None,
                 'Bürgi–Dunitz_angle_to_closest_nucleophile': None
             }
-
-            try:
+            try: 
                 # Load full PDB structure
                 pdb_file = self.preparedfiles_dir / f"{best_structure_name}.pdb"
+                pdb_file = Path(pdb_file)
                 print(f"Processing PDB file: {pdb_file.name}")
-                protein_structure = load_pdb_structure(pdb_file)
 
-                # Extract ligand atoms from PDB
-                extracted_ligand_atoms = extract_ligand_from_pdb(protein_structure, self.ligand_smiles)
+                # Extract chain IDs of ligands
+                chain_ids = get_hetatm_chain_ids(pdb_file)
 
-                # Find coordinates of chemical moiety of interest of the ligand
-                ligand_coords = find_substructure_coordinates(extracted_ligand_atoms, self.smarts_pattern, atom_to_get_coords_idx=0) # carbonyl C and phosphate atom are both at index 0
+                # Extract ligands as RDKit mol objects
+                ligands = []
+                for chain_id in chain_ids:
+                    mol  = extract_chain_as_rdkit_mol(pdb_file, chain_id, sanitize=False)
+                    ligands.append(mol)
+
+                # Get substrate mol object and assign correct bond order based on smiles
+                ligand_candidate = closest_ligands_by_element_composition(ligands, substrate_smiles, top_k=1)
+                ligand_mol = as_mol(ligand_candidate[0]) if ligand_candidate else None
+                ligand_mol = assign_bond_orders_from_smiles(ligand_mol, substrate_smiles)
+                ligand_mol  = ensure_3d(ligand_mol)
+
+                # Find ligand substructure match with moiety of interest
+                ligand_match = find_substructure_matches(ligand_mol, substrate_moiety)
+
+                # Calculate ligand-moiety centroid
+                ligand_centroid = centroid_from_match(ligand_mol, ligand_match)
+
+                if not ligand_centroid:
+                    # optional fallback: whole-ligand centroid
+                    logger.warning(f"Ligand-substructure centroid calculation unsuccessfull. Use whole-ligand centroid instead.")
+                    ligand_centroid = [centroid_from_match(ligand_mol, tuple(range(ligand_mol.GetNumAtoms())))]
+
+
+                # --- Distance between ligand and cofactor ---
+                # Get cofactor mol object and assign correct bond order based on smiles
+                if 'cofactor_smiles' in df.columns and df['cofactor_smiles'] is not None:              
+                    cofactor_candidate = closest_ligands_by_element_composition(ligands, cofactor_smiles, top_k=1)
+                    cofactor_mol = as_mol(cofactor_candidate[0]) if cofactor_candidate else None
+                    cofactor_mol = as_mol(cofactor_candidate[0]) if cofactor_candidate else None
+                    cofactor_mol = assign_bond_orders_from_smiles(cofactor_mol, cofactor_smiles)
+                    cofactor_mol = ensure_3d(cofactor_mol)
+
+                    # Find cofactor substructure match with moiety of interest
+                    cofactor_match = find_substructure_matches(cofactor_mol, cofactor_moiety)
+
+                    # Calculate cofactor-moiety centroid
+                    cofactor_centroid = centroid_from_match(cofactor_mol, cofactor_match)
+                    if not cofactor_centroid:
+                        logger.warning(f"Cofactor-substructure centroid calculation unsuccessfull. Use whole-cofactor centroid instead.")
+                        cofactor_centroid = [centroid_from_match(cofactor_mol, tuple(range(cofactor_mol.GetNumAtoms())))]
+
+
+                    # Minimum distance between centroids
+                    ligand_cofactor_distance = nearest_centroid_distance(ligand_centroid, cofactor_centroid)
+                    print(ligand_cofactor_distance)
+                    if not ligand_cofactor_distance: 
+                        logger.warning(f"Ligand-cofactor distance calculation was unsuccessful.")
+                        row_result.update(default_result)
+                        results.append(row_result)
+                        continue
+                    row_result['distance_ligand_to_cofactor'] = ligand_cofactor_distance
+
+                # --- Distance between squidly residues and ligand ---
+
                 # Get squidly protein atom coordinates
                 squidly_atom_coords = get_squidly_residue_atom_coords(pdb_file, squidly_residues)
                 filtered_squidly_atom_coords = filter_residue_atoms(squidly_atom_coords, atom_selection)
-
-                # Compute distances between squidly predicted residues and target chemical moiety
-                if not ligand_coords or not isinstance(ligand_coords, dict):
-                    logger.warning(f"No coordinates found that match the SMARTS pattern in {entry_name}.")
-                    row_result.update(default_result)
-                    results.append(row_result)
-                    continue
 
                 if not squidly_atom_coords:
                     logger.warning(f"No squidly residues found in {entry_name}.")
@@ -488,8 +642,8 @@ class GeometricFiltering(Step):
                     results.append(row_result)
                     continue
 
-                # --- Find distance between squidly residues and ligand
-                squidly_distance = find_min_distance_per_squidly(ligand_coords, filtered_squidly_atom_coords)
+                # Compute distances between squidly predicted residues and ligand
+                squidly_distance = find_min_distance_per_squidly(ligand_centroids, filtered_squidly_atom_coords)
 
                 # store distances in a dictionary
                 if squidly_distance:
@@ -499,13 +653,18 @@ class GeometricFiltering(Step):
                 # --- Find closest nucleophile overall
                 if self.find_closest_nuc == 1: 
                     all_nucleophiles_coords = get_all_nucs_atom_coords(pdb_file) # Get all nucleophilic residues atom coordinates
-                    closest_distance = find_min_distance(ligand_coords, all_nucleophiles_coords) # Compute smallest distances between all nucleophilic residues and ligand
+                    closest_distance = find_min_distance(ligand_centroids, all_nucleophiles_coords) # Compute smallest distances between all nucleophilic residues and ligand
 
                     if closest_distance:
                         closest_nuc_dict = {closest_distance['nuc_res']: closest_distance['distance']}
                         row_result['distance_ligand_to_closest_nuc'] = closest_nuc_dict
 
-                
+
+                ### TO DO: TRY SUBSTRUCTURE MATCHING AGAIN NOW THAT ARE ACTUALLY USING SMARTS
+                ### TO DO: ADAPT HOW WE CALCULATE THE DISTANCE BETWEEN SQUIDLY AND LIGAND
+                ## TO DO: HOW CAN WE HANDLE IF SEVERAL TIMES THE SAME MOIETY IS FOUND IN THE LIGAND FOR MSC?
+
+                """"
                 # --- Calculate Bürgi–Dunitz angle between closest nucleophile and ester bond
                 if self.esterase == 1: 
                     try: 
@@ -552,11 +711,11 @@ class GeometricFiltering(Step):
                     except Exception as e:
                         logger.error(f"Error processing {entry_name}: {e}")
                         row_result.update(default_result)
-                             
+            """                 
             except Exception as e:
                 logger.error(f"Error processing {entry_name}: {e}")
                 row_result.update(default_result)
-
+            
             results.append(row_result)
 
         return results
@@ -574,5 +733,190 @@ class GeometricFiltering(Step):
         return output_df
 
 
+
+
+
+
+class EsteraseGeometricFiltering(Step):
+
+    def __init__(self, preparedfiles_dir: str = '', esterase = 0, find_closest_nucleophile = 0, output_dir: str= ''):
+        self.esterase = esterase
+        self.find_closest_nuc = find_closest_nucleophile
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.preparedfiles_dir = Path(preparedfiles_dir)
+
+
+    def __execute(self, df: pd.DataFrame, tmp_dir: str) -> list:
+
+        if not self.preparedfiles_dir.exists():
+            raise FileNotFoundError(f"Directory does not exist: {self.preparedfiles_dir}")
+        
+        results = []
+
+        for _, row in df.iterrows():
+            entry_name = row['Entry']
+            best_structure_name = row['best_structure']
+            squidly_residues = str(row['Squidly_CR_Position'])
+            substrate_smiles = row['substrate_smiles']
+            cofactor_smiles = row['cofactor_smiles']
+            substrate_moiety = row['substrate_moiety']
+            cofactor_moiety = row['cofactor_moiety']
+            row_result = {}
+
+            default_result = {
+                'distance_ligand_to_cofactor': None, 
+                'distance_ligand_to_squidly_residues': None,
+                'distance_ligand_to_closest_nuc': None,
+                'Bürgi–Dunitz_angle_to_squidly_residue': None,
+                'Bürgi–Dunitz_angle_to_closest_nucleophile': None
+            }
+            try: 
+                # Load full PDB structure
+                pdb_file = self.preparedfiles_dir / f"{best_structure_name}.pdb"
+                pdb_file = Path(pdb_file)
+                print(f"Processing PDB file: {pdb_file.name}")
+
+                # Extract chain IDs of ligands
+                chain_ids = get_hetatm_chain_ids(pdb_file)
+
+                # Extract ligands as RDKit mol objects
+                ligands = []
+                for chain_id in chain_ids:
+                    mol  = extract_chain_as_rdkit_mol(pdb_file, chain_id, sanitize=False)
+                    ligands.append(mol)
+
+                # Get substrate mol object and assign correct bond order based on smiles
+                ligand_candidate = closest_ligands_by_element_composition(ligands, substrate_smiles, top_k=1)
+                ligand_mol = as_mol(ligand_candidate[0]) if ligand_candidate else None
+                ligand_mol = assign_bond_orders_from_smiles(ligand_mol, substrate_smiles)
+                ligand_mol  = ensure_3d(ligand_mol)
+
+                # Find ligand substructure match with moiety of interest
+                ligand_centroids  = find_substructure_matches(ligand_mol, substrate_moiety)
+
+                # Calculate ligand-moiety centroid
+
+                # Get cofactor mol objecgt and assign correct bond order based on smiles
+                if 'cofactor_smiles' in df.columns and df['cofactor_smiles'] is not None:              
+                    cofactor_candidate = closest_ligands_by_element_composition(ligands, cofactor_smiles, top_k=1)
+                    cofactor_mol = as_mol(cofactor_candidate[0]) if cofactor_candidate else None
+                    cofactor_mol = as_mol(cofactor_candidate[0]) if cofactor_candidate else None
+                    cofactor_mol = assign_bond_orders_from_smiles(cofactor_mol, cofactor_smiles)
+                    cofactor_mol = ensure_3d(cofactor_mol)
+
+                    # Find cofactor substructure match with moiety of interest
+                    cofactor_centroids = find_substructure_matches(cofactor_mol, cofactor_moiety)
+
+                    # Calculate cofactor-moiety centroid
+
+
+
+
+                
+
+                # Distance between centroids
+                ligand_cofactor_distance = nearest_centroid_distance(ligand_centroids, cofactor_centroids)
+                row_result['distance_ligand_to_cofactor'] = ligand_cofactor_distance
+
+                # Get squidly protein atom coordinates
+                squidly_atom_coords = get_squidly_residue_atom_coords(pdb_file, squidly_residues)
+                filtered_squidly_atom_coords = filter_residue_atoms(squidly_atom_coords, atom_selection)
+
+                if not squidly_atom_coords:
+                    logger.warning(f"No squidly residues found in {entry_name}.")
+                    row_result.update(default_result)
+                    results.append(row_result)
+                    continue
+
+                # Compute distances between squidly predicted residues and ligand
+                squidly_distance = find_min_distance_per_squidly(ligand_centroids, filtered_squidly_atom_coords)
+
+                # store distances in a dictionary
+                if squidly_distance:
+                    squidly_dist_dict = {res_name: match_info['distance'] for res_name, match_info in squidly_distance.items()}
+                    row_result['distance_ligand_to_squidly_residues'] = squidly_dist_dict
+
+                # --- Find closest nucleophile overall
+                if self.find_closest_nuc == 1: 
+                    all_nucleophiles_coords = get_all_nucs_atom_coords(pdb_file) # Get all nucleophilic residues atom coordinates
+                    closest_distance = find_min_distance(ligand_centroids, all_nucleophiles_coords) # Compute smallest distances between all nucleophilic residues and ligand
+
+                    if closest_distance:
+                        closest_nuc_dict = {closest_distance['nuc_res']: closest_distance['distance']}
+                        row_result['distance_ligand_to_closest_nuc'] = closest_nuc_dict
+
+
+                ### TO DO: TRY SUBSTRUCTURE MATCHING AGAIN NOW THAT ARE ACTUALLY USING SMARTS
+                ### TO DO: ADAPT HOW WE CALCULATE THE DISTANCE BETWEEN SQUIDLY AND LIGAND
+                ## TO DO: HOW CAN WE HANDLE IF SEVERAL TIMES THE SAME MOIETY IS FOUND IN THE LIGAND FOR MSC?
+
+                """"
+                # --- Calculate Bürgi–Dunitz angle between closest nucleophile and ester bond
+                if self.esterase == 1: 
+                    try: 
+                        oxygen_atom_coords = find_substructure_coordinates(extracted_ligand_atoms, self.smarts_pattern, atom_to_get_coords_idx=0) # atom1 from SMARTS match (e.g., double bonded O)
+                        
+                        # Angle between nucleophilic squidly residues and ester bond
+                        nuc_squidly_atom_coords = filter_nucleophilic_residues(filtered_squidly_atom_coords)
+
+                        bd_angles_to_squidly = {}
+
+                        for res_name, atoms in nuc_squidly_atom_coords.items():
+                            if not atoms:
+                                continue
+
+                            nuc_atom_coords = np.array(atoms[0]['coords'])
+                            ligand_coords_list = list(ligand_coords.values())[0]
+                            oxygen_coords_list = list(oxygen_atom_coords.values())[0]
+
+                            if not ligand_coords_list or not oxygen_coords_list:
+                                continue
+
+                            ligand_c_coords = np.array(ligand_coords_list[0]['coords'])
+                            oxygen_coords = np.array(oxygen_coords_list[0]['coords'])
+
+                            angle = calculate_burgi_dunitz_angle(nuc_atom_coords, ligand_c_coords, oxygen_coords)
+
+                            # Store angle in dictionary
+                            bd_angles_to_squidly[res_name] = angle
+
+                        if bd_angles_to_squidly:
+                            row_result['Bürgi–Dunitz_angles_to_squidly_residues'] = bd_angles_to_squidly
+
+                        # Single angle to closest nucleophile as dictionary
+                        if closest_distance:
+                            closest_angle_info = {
+                                closest_distance['nuc_res']: calculate_burgi_dunitz_angle(
+                                    np.array(closest_distance['nuc_coords']),
+                                    ligand_c_coords,
+                                    oxygen_coords
+                                )
+                            }
+                            row_result['Bürgi–Dunitz_angle_to_closest_nucleophile'] = closest_angle_info
+                            
+                    except Exception as e:
+                        logger.error(f"Error processing {entry_name}: {e}")
+                        row_result.update(default_result)
+            """                 
+            except Exception as e:
+                logger.error(f"Error processing {entry_name}: {e}")
+                row_result.update(default_result)
+            
+            results.append(row_result)
+
+        return results
+    
+
+    def execute(self, df: pd.DataFrame) -> pd.DataFrame:
+        if not self.output_dir:
+            print("No output directory provided")
+            return df
+
+        results = self.__execute(df, self.output_dir)        
+        results_df = pd.DataFrame(results) # Convert list of row-dictionaries to df       
+        output_df = pd.concat([df.reset_index(drop=True), results_df], axis=1) # Merge with input df
+
+        return output_df
 
 

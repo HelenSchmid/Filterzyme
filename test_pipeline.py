@@ -8,7 +8,12 @@ from filtering_pipeline.pipeline import Superimposition
 from filtering_pipeline.pipeline import GeometricFilters
 
 
-df = pd.read_pickle('/nvme2/helen/masterthesis/3_manuscript/DB_pipeline_short_enzymes_vina_only.pkl')
+
+df = pd.read_pickle('/nvme2/helen/masterthesis/3_manuscript/DB_pipeline_short_enzymes.pkl').head(1)
+
+df_sup = pd.read_pickle('pipeline_output_test/superimposition/best_structures.pkl')
+df_sup['cofactor_moiety'] = 'C#N'
+df_sup['substrate_moiety'] = 'CCC'
 
 if __name__ == "__main__":
 
@@ -24,8 +29,6 @@ if __name__ == "__main__":
 
     )
 
-
-
     superimposition = Superimposition(
     maxMatches = 1000,
     num_threads = 1,
@@ -33,5 +36,16 @@ if __name__ == "__main__":
     output_dir = Path('pipeline_output_test/superimposition')
     )
 
-    pipeline.run()
+    #super_df= superimposition._ligandRMSD(df_sup)
+
+    filtering = GeometricFilters(
+        esterase = 0, 
+        find_closest_nuc=0, 
+        num_threads=1, 
+        df = df_sup,     
+        input_dir = Path('pipeline_output_test/superimposition'),
+        output_dir = Path('pipeline_output_test/superimposition'))
+
+
+    filtering._run_geometric_filtering()
 

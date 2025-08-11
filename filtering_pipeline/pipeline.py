@@ -8,6 +8,7 @@ from filtering_pipeline.utils.helpers import log_section, log_subsection, log_bo
 from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs, add_metrics_to_best_structures
 from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
 from filtering_pipeline.steps.save_step import Save
+from filtering_pipeline.steps.dock_vina_step import Vina
 from filtering_pipeline.steps.extract_docking_metrics_step import DockingMetrics
 from filtering_pipeline.steps.preparevina_step import PrepareVina
 from filtering_pipeline.steps.preparechai_step import PrepareChai
@@ -15,14 +16,14 @@ from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
 from filtering_pipeline.steps.superimposestructures_step import SuperimposeStructures
 from filtering_pipeline.steps.computeproteinRMSD_step import ProteinRMSD
 from filtering_pipeline.steps.computeligandRMSD_step import LigandRMSD
-from filtering_pipeline.steps.geometric_filtering import GeometricFiltering
+from filtering_pipeline.steps.geometric_filtering import GeneralGeometricFiltering
 from filtering_pipeline.steps.fpocket_step import Fpocket
 from filtering_pipeline.steps.ligandSASA_step import LigandSASA
 from filtering_pipeline.steps.plip_step import PLIP
 
 from enzymetk.dock_chai_step import Chai
 from enzymetk.dock_boltz_step import Boltz
-from enzymetk.dock_vina_step import Vina
+#from enzymetk.dock_vina_step import Vina
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -119,7 +120,7 @@ class Docking:
 
     def _run_vina(self, df_boltz):
         log_subsection("Docking using Vina")
-        vina_dir = Path(self.output_dir) / 'vina/' 
+        vina_dir = Path(self.output_dir) / 'vina/'
         vina_dir.mkdir(exist_ok=True, parents=True)
         delete_empty_subdirs(vina_dir)
 
@@ -255,7 +256,7 @@ class GeometricFilters:
         return df_final
 
     def _run_geometric_filtering(self):
-        df_geo_filter = self.df << (GeometricFiltering(
+        df_geo_filter = self.df << (GeneralGeometricFiltering(
                                         preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition',
                                         output_dir=self.output_dir,
                                         esterase=self.esterase,

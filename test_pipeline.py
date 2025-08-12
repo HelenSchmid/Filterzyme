@@ -22,11 +22,13 @@ if __name__ == "__main__":
         df = df,
         max_matches=1000,
         num_threads=1,
+        skip_catalytic_residue_prediction = False,
         metagenomic_enzymes=0,
         squidly_dir='filtering_pipeline/squidly_final_models/',
         base_output_dir="pipeline_output_test", 
 
     )
+
 
     superimposition = Superimposition(
     maxMatches = 1000,

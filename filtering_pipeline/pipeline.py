@@ -335,7 +335,6 @@ class Pipeline:
         gf = GeometricFilters(
             df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/best_structures.pkl'),
             esterase=self.esterase,
-            find_closest_nuc=self.find_closest_nuc,
             input_dir=Path(self.base_output_dir) / "superimposition",
             output_dir=Path(self.base_output_dir) / "geometricfiltering",
             num_threads=self.num_threads,

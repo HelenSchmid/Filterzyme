@@ -415,7 +415,7 @@ def calculate_burgi_dunitz_angle(atom_nu_coords, atom_c_coords, atom_o_coords):
 
 class EsteraseGeometricFiltering(Step):
 
-    def __init__(self, ligand_smiles: str= '', smarts_pattern: str = '', preparedfiles_dir: str = '',  output_dir: str= ''):
+    def __init__(self, preparedfiles_dir: str = '',  output_dir: str= ''):
         
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -491,7 +491,7 @@ class EsteraseGeometricFiltering(Step):
                 
                 # --- Calculate Bürgi–Dunitz angle between closest nucleophile and ester bond
                 try: 
-                    oxygen_atom_coords = find_substructure_coordinates(extracted_ligand_atoms, self.smarts_pattern, atom_to_get_coords_idx=0) # atom1 from SMARTS match (e.g., double bonded O)
+                    oxygen_atom_coords = find_substructure_coordinates(extracted_ligand_atoms, substrate_moiety, atom_to_get_coords_idx=0) # atom1 from SMARTS match (e.g., double bonded O)
                     
                     # Angle between nucleophilic squidly residues and ester bond
                     nuc_squidly_atom_coords = filter_nucleophilic_residues(filtered_squidly_atom_coords)

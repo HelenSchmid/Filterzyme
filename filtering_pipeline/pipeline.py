@@ -16,7 +16,8 @@ from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
 from filtering_pipeline.steps.superimposestructures_step import SuperimposeStructures
 from filtering_pipeline.steps.computeproteinRMSD_step import ProteinRMSD
 from filtering_pipeline.steps.computeligandRMSD_step import LigandRMSD
-from filtering_pipeline.steps.geometric_filtering import GeneralGeometricFiltering
+from filtering_pipeline.steps.geometric_filtering_cofactor import GeneralGeometricFiltering
+from filtering_pipeline.steps.geometric_filtering_esterase import EsteraseGeometricFiltering
 from filtering_pipeline.steps.fpocket_step import Fpocket
 from filtering_pipeline.steps.ligandSASA_step import LigandSASA
 from filtering_pipeline.steps.plip_step import PLIP
@@ -233,7 +234,6 @@ class Superimposition:
 class GeometricFilters:
     def __init__(self,  df, esterase = 0, find_closest_nuc = 0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
         self.esterase = esterase
-        self.find_closest_nuc = find_closest_nuc
         self.num_threads = num_threads
         self.df = df.copy()
         self.input_dir = Path(input_dir)
@@ -244,7 +244,7 @@ class GeometricFilters:
     def run(self):
         
         log_section('Running geometric filtering')
-        log_subsection('Calculate catalytic residue - ligand distances')
+        log_subsection('Calculate catalytic residue/cofactor - ligand distances')
         df_filter = self._run_geometric_filtering()
         log_subsection('Calculate active site volume')
         df_ASvolume = self._active_site_volume(df_filter)
@@ -256,13 +256,16 @@ class GeometricFilters:
         return df_final
 
     def _run_geometric_filtering(self):
-        df_geo_filter = self.df << (GeneralGeometricFiltering(
-                                        preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition',
-                                        output_dir=self.output_dir,
-                                        esterase=self.esterase,
-                                        find_closest_nucleophile=self.find_closest_nuc
-                                    )
-                                >> Save(Path(self.output_dir) / 'geometricfiltering.pkl'))
+        if self.esterase == 1: 
+            df_geo_filter = self.df << (EsteraseGeometricFiltering(
+                                            preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition',
+                                            output_dir=self.output_dir)
+                                    >> Save(Path(self.output_dir) / 'geometricfiltering.pkl'))
+        else: 
+            df_geo_filter = self.df << (GeneralGeometricFiltering(
+                                            preparedfiles_dir=Path(self.input_dir) / 'preparedfiles_for_superimposition',
+                                            output_dir=self.output_dir)
+                                    >> Save(Path(self.output_dir) / 'geometricfiltering.pkl'))
         return df_geo_filter
 
     def _active_site_volume(self, df):
@@ -284,15 +287,12 @@ class GeometricFilters:
         return df_plip
 
 
-
 class Pipeline:
     """Full pipeline"""
     def __init__(self,
                 df, 
-                smarts_pattern: str,
                 max_matches: int = 1000,
                 esterase: int = 0,
-                find_closest_nuc: int = 0,
                 metagenomic_enzymes: int = 0,
                 skip_catalytic_residue_prediction: bool = False,
                 num_threads: int = 1,
@@ -301,10 +301,8 @@ class Pipeline:
                 ):
                  
         self.df = df.copy()
-        self.smarts_pattern = smarts_pattern
         self.max_matches = max_matches
         self.esterase = esterase
-        self.find_closest_nuc = find_closest_nuc
         self.metagenomic_enzymes = metagenomic_enzymes
         self.skip_catalytic_residue_prediction = skip_catalytic_residue_prediction
         self.num_threads = num_threads
@@ -335,7 +333,6 @@ class Pipeline:
 
         # Geometric filtering
         gf = GeometricFilters(
-            smarts_pattern=self.smarts_pattern,
             df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/best_structures.pkl'),
             esterase=self.esterase,
             find_closest_nuc=self.find_closest_nuc,

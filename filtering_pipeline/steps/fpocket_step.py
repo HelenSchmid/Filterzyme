@@ -9,8 +9,13 @@ import subprocess
 import shutil
 import uuid
 import re
+from collections import Counter
+from biotite.structure.io.pdb import PDBFile
+from biotite.structure import AtomArrayStack
 
 from filtering_pipeline.steps.step import Step
+from filtering_pipeline.utils.helpers import get_hetatm_chain_ids, extract_chain_as_rdkit_mol, closest_ligands_by_element_composition
+
 
 # How to run fpocket in terminal: fpocket -f /home/helen/cec_degrader/generalize/alphafold_structures/A1RRK1_structure.pdb
 # -r string: (None) This parameter allows you to run fpocket in a restricted mode. Let's suppose you have a very shallow or large pocket with a ligand inside and the automatic pocket prediction always splits up you pocket or you have only a part of the pocket found. Specifying your ligand residue with -r allows you to detect and characterize you ligand binding site explicitly. 
@@ -163,6 +168,64 @@ def extract_SASA(fpocket_txt_path: Path) -> dict:
 
     return sasa_values
 
+def fpocket_r_from_smiles_via_composition(pdb_path: str | Path, substrate_smiles: str) -> str | None:
+    """
+    Choose the ligand whose element composition is closest to substrate_smiles,
+    then return 'RESNUM:RESNAME:CHAIN' as input for fpocket. 
+    """
+    pdb_path = str(pdb_path)
+
+    # find ligand chain ids
+    chain_ids = get_hetatm_chain_ids(pdb_path)
+    if not chain_ids:
+        return None
+
+    # get ligand mol objects
+    chain_mols = []
+    for ch in chain_ids:
+        try:
+            m = extract_chain_as_rdkit_mol(pdb_path, ch, sanitize=False)
+        except Exception:
+            m = None
+        if m is not None:
+            chain_mols.append((ch, m))
+
+    if not chain_mols:
+        return None
+
+    # choose ligand closest by element composition
+    mols_only = [m for _, m in chain_mols]
+    ranked = closest_ligands_by_element_composition(mols_only, substrate_smiles, top_k=1)
+    if not ranked:
+        return None
+    best_mol = ranked[0]
+
+    # map back to chain id (first match)
+    best_chain = next(ch for ch, m in chain_mols if m is best_mol)
+
+    # read residue number & name for that chain 
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    if isinstance(structure, AtomArrayStack):
+        structure = structure[0]
+
+    mask = (structure.chain_id == best_chain)
+    if not np.any(mask):
+        return None
+
+    res_ids = structure.res_id[mask] if hasattr(structure, "res_id") else structure.residue_id[mask]
+    res_names = structure.res_name[mask] if hasattr(structure, "res_name") else structure.residue_name[mask]
+
+    unique_ids = np.unique(res_ids)
+    resnum = int(unique_ids.min())
+    # mode of res_names
+    rn_counts = Counter(res_names.tolist())
+    resname = rn_counts.most_common(1)[0][0].strip()
+
+    # 5) format for fpocket: RESNUM:RESNAME:CHAIN (e.g., "1:LIG:B")
+    return f"{resnum}:{resname}:{best_chain}"
+
 
 
 class Fpocket(Step):
@@ -176,6 +239,7 @@ class Fpocket(Step):
     def _process_single_row_with_fpocket(self, row: pd.Series) -> pd.Series:
         best_structure_name = row['best_structure']
         pdb_file_path = self.preparedfiles_dir / f"{best_structure_name}.pdb"
+        substrate_smiles = row.get("substrate_smiles")
         
         row_results = {"ASvolume_dir": None}
 
@@ -196,7 +260,16 @@ class Fpocket(Step):
             logger.info(f"Running fpocket on {temp_pdb_path.name}")
             
             # fpocket command
-            fpocket_cmd = ["fpocket", "-f", str(temp_pdb_path), "-r", "1:LIG:B"]
+            fpocket_cmd = ["fpocket", "-f", str(temp_pdb_path)]
+
+            try:
+                r_arg = fpocket_r_from_smiles_via_composition(pdb_file_path, substrate_smiles)
+            except Exception as e:
+                logger.warning(f"Could not infer -r for {pdb_file_path.name}: {e}")
+                r_arg = None
+
+            if r_arg:
+                fpocket_cmd += ["-r", r_arg]
 
             result = subprocess.run(
                 fpocket_cmd,

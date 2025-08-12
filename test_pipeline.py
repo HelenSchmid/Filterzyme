@@ -20,7 +20,6 @@ if __name__ == "__main__":
     # Configure and run
     pipeline = Pipeline(
         df = df,
-        smarts_pattern='[$([CX3](=O)[OX2H0][#6])]',
         max_matches=1000,
         num_threads=1,
         metagenomic_enzymes=0,
@@ -40,12 +39,12 @@ if __name__ == "__main__":
 
     filtering = GeometricFilters(
         esterase = 0, 
-        find_closest_nuc=0, 
+        find_closest_nuc=1, 
         num_threads=1, 
         df = df_sup,     
         input_dir = Path('pipeline_output_test/superimposition'),
         output_dir = Path('pipeline_output_test/superimposition'))
 
 
-    filtering._run_geometric_filtering()
+    pipeline.run()
 

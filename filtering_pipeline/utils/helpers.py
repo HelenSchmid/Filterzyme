@@ -5,7 +5,11 @@ import logging
 from pathlib import Path
 from Bio.PDB import PDBParser, PDBIO, Select
 import re
-
+from collections import Counter
+from io import StringIO
+from biotite.structure import AtomArrayStack
+from biotite.structure.io.pdb import PDBFile
+from rdkit import Chem
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -68,7 +72,6 @@ def clean_protein_sequence(seq: str) -> str:
     seq = re.sub(r'[^ACDEFGHIKLMNPQRSTVWY]', '', seq)  # Keep only standard 20 amino acids
     return seq
 
-
 def delete_empty_subdirs(directory):
     '''Delete empty subdirectories'''
     directory = Path(directory)
@@ -102,6 +105,22 @@ class LigandSelect(Select):
     def accept_residue(self, residue):
         return residue.get_resname() == self.ligand_resname
 
+
+class SingleLigandSelect(Select):
+    def __init__(self, chain_id, resseq, resname=None):
+        self.chain_id = chain_id
+        self.resseq = resseq
+        self.resname = (resname or "").strip()
+
+    def accept_atom(self, atom):
+        res = atom.get_parent()
+        ch_match = res.get_parent().id == self.chain_id
+        id_match = res.id[1] == self.resseq
+        if self.resname:
+            rn_match = res.get_resname().strip() == self.resname
+        else:
+            rn_match = True
+        return ch_match and id_match and rn_match
 
 def extract_entry_name_from_PDB_filename(name):
     '''Extracts the entry name from a PDB filename of docked structures.
@@ -189,3 +208,137 @@ def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
     merged_df_final = merged_df.drop(columns=["vina_affinities"])
 
     return merged_df_final
+
+
+def get_hetatm_chain_ids(pdb_path):
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    structure = structure[0]
+
+    hetatm_chains = set(structure.chain_id[structure.hetero])
+    atom_chains = set(structure.chain_id[~structure.hetero])
+
+    # Exclude chains that also have ATOM records (i.e., protein chains)
+    ligand_only_chains = hetatm_chains - atom_chains
+
+    return list(ligand_only_chains)
+
+
+def extract_chain_as_rdkit_mol(pdb_path, chain_id, sanitize=False):
+    '''
+    Extract ligand chain as RDKit mol objects given their chain ID. 
+    '''
+    # Read full structure
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    if isinstance(structure, AtomArrayStack):
+        structure = structure[0]  # first model only
+
+    # Extract chain
+    mask = structure.chain_id == chain_id
+
+    if len(mask) != structure.array_length():
+        raise ValueError(f"Mask shape {mask.shape} doesn't match atom array length {structure.array_length()}")
+
+    chain = structure[mask]
+
+    if chain.shape[0] == 0:
+        raise ValueError(f"No atoms found for chain {chain_id} in {pdb_path}")
+
+    # Convert to PDB string using Biotite
+    temp_pdb = PDBFile()
+    temp_pdb.set_structure(chain)
+    pdb_str_io = StringIO()
+    temp_pdb.write(pdb_str_io)
+    pdb_str = pdb_str_io.getvalue()
+
+    # Convert to RDKit mol from PDB string
+    mol = Chem.MolFromPDBBlock(pdb_str, sanitize=sanitize)
+
+    return mol
+
+
+def atom_composition_fingerprint(mol):
+    """
+    Returns a Counter of atom symbols in the molecule (e.g., {'C': 10, 'N': 2}).
+    """
+    return Counter([atom.GetSymbol() for atom in mol.GetAtoms()])
+
+
+def norm_l1_dist(fp_a, fp_b, keys=None):
+    """
+    Normalized L1 distance on element counts. Used to pick the closest element-count vector
+    of all ligands to the reference ligand. 
+    """
+    if keys is None:
+        keys = set(fp_a) | set(fp_b)
+    num = 0.0
+    den = 0.0
+    for k in keys:
+        a = fp_a.get(k, 0)
+        b = fp_b.get(k, 0)
+        num += abs(a - b)
+        den += a + b
+    return 0.0 if den == 0 else num / den
+
+
+def closest_ligands_by_element_composition(ligand_mols, reference_smiles, top_k = 2):
+    """
+    Filters a list of RDKit Mol objects based on atom element composition
+    matching a reference SMILES. It returns a mol object that matches the element composition. 
+    Because sometimes some atoms especially hydrogens can get lost in conversions, I pick the ligand
+    with the closest atom composition to the reference; doesn't have to match perfectly. 
+    """
+    ref_mol = Chem.MolFromSmiles(reference_smiles)
+    if ref_mol is None:
+        raise ValueError("Reference SMILES could not be parsed.")
+
+    # calculate atom composition of the reference smile string i.e. the ligand of interest
+    ref_fp = atom_composition_fingerprint(ref_mol)
+
+    out = []
+    for mol in ligand_mols:
+        if mol is None:
+            continue
+        try:
+            fp = atom_composition_fingerprint(mol)
+            dist = norm_l1_dist(ref_fp, fp)
+            score = 1.0 - dist
+            out.append((mol, score))
+        except Exception as e:
+            print(f"Error processing ligand: {e}")
+            continue
+    # return closest matching lgiands
+    out.sort(key=lambda t: t[1], reverse=True)
+    return [mol for mol, _ in out[:top_k]]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

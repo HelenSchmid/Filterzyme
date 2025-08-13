@@ -55,7 +55,16 @@ def generate_boltz_structure_path(input_path):
     base_path = Path(input_path)
     base_name = base_path.name  
     new_path = base_path / f"boltz_results_{base_name}" / "predictions" / base_name / f"{base_name}_model_0.cif"
-    print(new_path)
+
+    return new_path
+
+def generate_chai_structure_path(input_path):
+    """
+    Generate the structure file path of Chai structure based on chai output directory.
+    """
+    base_path = Path(input_path)
+    base_name = base_path.name  
+    new_path = base_path / 'chai' / f"{base_name}_0.cif"
 
     return new_path
 
@@ -315,6 +324,23 @@ def closest_ligands_by_element_composition(ligand_mols, reference_smiles, top_k 
     return [mol for mol, _ in out[:top_k]]
 
 
+
+def ensure_3d(m: Chem.Mol) -> Chem.Mol:
+    """Make sure we have a conformer (PDB usually has one; this is a fallback)."""
+    if m is None:
+        return None
+    if m.GetNumConformers() == 0:
+        m = Chem.AddHs(m)
+        AllChem.EmbedMolecule(m, randomSeed=0xf00d)
+        m = Chem.RemoveHs(m)
+    return m
+
+def as_mol(x):
+    # In case anything returns (mol, score) or a dict
+    if isinstance(x, Mol): return x
+    if isinstance(x, tuple) and x and isinstance(x[0], Mol): return x[0]
+    if isinstance(x, dict) and isinstance(x.get("mol"), Mol): return x["mol"]
+    return None
 
 
 

@@ -344,12 +344,13 @@ def as_mol(x):
 
 
 
-
-
-
-
-
-
+def valid_file_list(val):
+# Ensure it's a list of existing files
+    if isinstance(val, str):
+        val = [val]
+    if not isinstance(val, (list, tuple)):
+        return False
+    return all(isinstance(p, str) and Path(p).is_file() for p in val)
 
 
 

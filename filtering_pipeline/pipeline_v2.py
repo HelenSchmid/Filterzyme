@@ -47,7 +47,6 @@ class Docking:
         self.df = df.copy()
         self.squidly_dir = Path(squidly_dir) 
         self.skip_catalytic_residue_prediction = skip_catalytic_residue_prediction
-        self.alternative_structure_for_vina = alternative_structure_for_vina
         self.num_threads = num_threads
         self.output_dir = Path(output_dir)
         self.metagenomic_enzymes = metagenomic_enzymes
@@ -141,17 +140,17 @@ class Docking:
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz
 
-    def _run_vina(self, df_boltz):
+    def _run_vina(self, df_boltz, alternative_structure_for_vina):
         log_subsection("Docking using Vina")
         vina_dir = Path(self.output_dir) / 'vina/'
         vina_dir.mkdir(exist_ok=True, parents=True)
         delete_empty_subdirs(vina_dir)
 
         if self.metagenomic_enzymes == 1:
-            if self.alternative_strucuture_for_vina == 'Chai':
+            if alternative_structure_for_vina == 'Chai':
                 log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' )    
                 df_boltz['structure'] = df_boltz['chai_dir'].apply(generate_chai_structure_path)
-            elif self.alternative_strucuture_for_vina == 'Boltz':
+            elif alternative_structure_for_vina == 'Boltz':
                 log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' )    
                 df_boltz['structure'] = df_boltz['boltz_dir'].apply(generate_boltz_structure_path)
 
@@ -168,7 +167,7 @@ class Docking:
             delete_empty_subdirs(vina_dir)    
 
             # Prepare missing entries with Chai structure
-            if self.alternative_structure_for_vina == 'Chai':
+            if alternative_structure_for_vina == 'Chai':
                 log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' + f'Entries: {list(missing_entries)}')    
                 df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
                 df_missing['structure'] = df_missing['chai_dir'].apply(generate_chai_structure_path)  
@@ -176,7 +175,7 @@ class Docking:
 
 
             # Prepare missing entries with Boltz structure
-            elif self.alternative_structure_for_vina == 'Boltz':
+            elif alternative_structure_for_vina == 'Boltz':
                 log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' + f'Entries: {list(missing_entries)}')    
                 df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
                 df_missing['structure'] = df_missing['boltz_dir'].apply(generate_boltz_structure_path)
@@ -223,7 +222,7 @@ class Superimposition:
         df_prep = self._prepare_files_for_superimposition()
         df_sup = self._superimposition(df_prep)
         log_subsection('Calculating protein RMSDs')
-        df_proteinRMSD = self._proteinRMSD(df_sup)
+        df_proteinRMSD_all, df_proteinRMSD  = self._proteinRMSD(df_sup)
         log_subsection('Calculating ligand RMSDs')
         df_ligandRMSD = self._ligandRMSD(df_proteinRMSD)
         return df_ligandRMSD
@@ -253,15 +252,16 @@ class Superimposition:
         proteinRMSD_dir = Path(self.output_dir) / 'proteinRMSD'
         proteinRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir) / 'superimposed_structures'
-        df_proteinRMSD = df << (ProteinRMSD('Entry', input_dir = input_dir, output_dir = proteinRMSD_dir, visualize_heatmaps = True)  
-                            >> Save(Path(self.output_dir)/'proteinRMSD.pkl'))
-        return df_proteinRMSD
+        df_proteinRMSD_pairwise, df_proteinRMSD = df << (ProteinRMSD('Entry', input_dir = input_dir, output_dir = proteinRMSD_dir, visualize_heatmaps = True))
+        df_proteinRMSD_pairwise.to_pickle(Path(self.output_dir) / 'proteinRMSD_pairwise.pkl')
+        df_proteinRMSD.to_pickle(Path(self.output_dir)/ 'proteinRMSD.pkl')
+        return df_proteinRMSD_pairwise, df_proteinRMSD
 
     def _ligandRMSD(self, df): 
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
-        df_best_structures = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
+        df_ligandRMSD, df_structures = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
         df_best_structures_w_metrics = add_metrics_to_best_structures(df_best_structures, pd.read_pickle(Path(self.output_dir).parent / 'docking/dockingmetrics.pkl'))
         df_best_structures_w_metrics.to_pickle(Path(self.output_dir) / 'best_structures.pkl')
         return df_best_structures_w_metrics

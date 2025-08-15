@@ -237,7 +237,7 @@ class Fpocket(Step):
 
     # This function processes a SINGLE row and returns its result (a pd.Series)
     def _process_single_row_with_fpocket(self, row: pd.Series) -> pd.Series:
-        best_structure_name = row['best_structure']
+        best_structure_name = row['best_strucutre']
         pdb_file_path = self.preparedfiles_dir / f"{best_structure_name}.pdb"
         substrate_smiles = row.get("substrate_smiles")
         

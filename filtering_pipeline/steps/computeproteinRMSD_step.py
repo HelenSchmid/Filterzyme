@@ -30,7 +30,7 @@ sns.set(rc={'figure.figsize': (3,3), 'font.family': 'sans-serif', 'font.sans-ser
         style='ticks')
 
 
-def compute_proteinrmsd(pdb_file):
+def compute_proteinRMSD(pdb_file):
     parser = PDB.PDBParser(QUIET=True)
     structure = parser.get_structure('complex', pdb_file)
     model = structure[0]
@@ -87,7 +87,7 @@ def compute_tool_pair_stats(rmsd_df, tools=["chai", "vina", "boltz"]):
     for t1, t2 in combinations_with_replacement(tools, 2):
         label = f"{min(t1, t2)}-{max(t1, t2)}"
         subset = rmsd_df[rmsd_df["tool_pair"] == label]
-        rmsds = subset["ProteinRMSD"].dropna().tolist()
+        rmsds = subset["proteinRMSD"].dropna().tolist()
 
         all_pairwise_rmsds.extend(rmsds)
 
@@ -194,7 +194,7 @@ class ProteinRMSD(Step):
                 if not pdb_file_path.exists():
                     print(f"File does not exist: {pdb_file_path}")
 
-                rmsd = compute_proteinrmsd(pdb_file_path)  # Compute protein RMSD for the PDB file
+                rmsd = compute_proteinRMSD(pdb_file_path)  # Compute protein RMSD for the PDB file
 
                 # Store the RMSD value in a dictionary to append later
                 pdb_file_name = pdb_file_path.name
@@ -218,7 +218,7 @@ class ProteinRMSD(Step):
                     'proteinRMSD': rmsd,   # Store the calculated RMSD value
                 })
  
-        # Build the main RMSD DataFrame
+        # Pairwise protein_RMSD comparisons
         rmsd_df = pd.DataFrame(rmsd_values)
         
         # Compute per-entry tool pair statistics
@@ -234,6 +234,7 @@ class ProteinRMSD(Step):
         # Merge both stats into rmsd_df
         rmsd_df = rmsd_df.merge(entry_pair_stats, on="Entry", how="left")
         rmsd_df = rmsd_df.merge(entry_overall_stats, on="Entry", how="left")
+        print(rmsd_df)
 
         # Optionally generate heatmaps
         if self.visualize_heatmaps:
@@ -241,9 +242,43 @@ class ProteinRMSD(Step):
             visualize_rmsd_by_entry(rmsd_df, output_dir=self.output_dir)
 
         # Merge with the original df to keep metadata
-        rmsd_df = pd.merge(df, rmsd_df, on='Entry', how='left')
+        rmsd_df = pd.merge(rmsd_df, df, on='Entry', how='left')
         
-        return rmsd_df
+        #  Per-structure DF (one row each)
+        # Collect unique docked structures per Entry from pairwise df
+        per_entry_structures = (
+            rmsd_df[['Entry', 'docked_structure1', 'docked_structure2']]
+            .dropna(subset=['Entry'])
+            .copy()
+        )
+        stacked = pd.concat([
+            per_entry_structures[['Entry', 'docked_structure1']]
+                .rename(columns={'docked_structure1': 'docked_structure'}),
+            per_entry_structures[['Entry', 'docked_structure2']]
+                .rename(columns={'docked_structure2': 'docked_structure'})
+        ], ignore_index=True)
+
+        # Keep one row per (Entry, docked_structure)
+        stacked = stacked.dropna(subset=['docked_structure']).drop_duplicates()
+
+        # Add parsed tool per structure
+        stacked['tool'] = stacked['docked_structure'].apply(get_tool_from_structure_name)
+
+        # Bring in per-entry stats (same columns as pairwise)
+        structures_df = stacked.merge(entry_pair_stats, on='Entry', how='left') \
+                               .merge(entry_overall_stats, on='Entry', how='left')
+
+        # Bring in the original input metadata columns (everything in df except duplicates)
+        # This duplicates the metadata for each structure within an Entry, as requested.
+        structures_df = structures_df.merge(df, on='Entry', how='left')
+
+        # Reorder columns a bit for readability
+        first_cols = ['Entry', 'docked_structure', 'tool']
+        other_cols = [c for c in structures_df.columns if c not in first_cols]
+        structures_df = structures_df[first_cols + other_cols]
+
+        # Return both outputs
+        return rmsd_df, structures_df
 
 
     def execute(self, df) -> pd.DataFrame:

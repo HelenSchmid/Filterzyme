@@ -431,7 +431,7 @@ class EsteraseGeometricFiltering(Step):
 
         for _, row in df.iterrows():
             entry_name = row['Entry']
-            best_structure_name = row['best_structure']
+            best_structure_name = row['best_structure'] # best_structure
             squidly_residues = str(row['Squidly_CR_Position'])
             substrate_smiles = row['substrate_smiles']
             substrate_moiety = row['substrate_moiety']

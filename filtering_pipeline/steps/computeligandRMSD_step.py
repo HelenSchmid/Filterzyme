@@ -333,7 +333,7 @@ def _norm_l1_dist(fp_a, fp_b, keys=None):
     return 0.0 if den == 0 else num / den
 
 
-def closest_ligands_by_element_composition(ligand_mols, reference_smiles, include_h=False, top_k = 2):
+def closest_ligands_by_element_composition(ligand_mols, reference_smiles, top_k = 2):
     """
     Filters a list of RDKit Mol objects based on atom element composition
     matching a reference SMILES. It returns a mol object that matches the element composition. 
@@ -382,7 +382,14 @@ class LigandRMSD(Step):
             print(f"Processing entry: {sub_dir.name}")
 
             # Get substrate_smiles for entry
-            substrate_smiles = df.loc[df[self.entry_col] == sub_dir.name, "substrate_smiles"].iloc[0]
+            try:
+                substrate_smiles = df.loc[df[self.entry_col] == sub_dir.name, "substrate_smiles"].iloc[0]
+                if pd.isna(substrate_smiles) or str(substrate_smiles).strip() == "":
+                    print(f"[SKIP] substrate_smiles empty for {sub_dir.name}")
+                    continue
+            except IndexError:
+                print(f"[SKIP] No substrate_smiles found for {sub_dir.name}")
+                continue
 
             # Process all PDB files in subdirectories
             for pdb_file_path in sub_dir.glob("*.pdb"):
@@ -457,7 +464,7 @@ class LigandRMSD(Step):
                     'ligand_rmsd': rmsd   # Store the calculated RMSD value
                 })
 
-        # Convert the list of dictionaries into a df
+        # Pairwise ligandRMSD table
         rmsd_df = pd.DataFrame(rmsd_values)
 
         # Add tool-wise and overall normalized stats per entry
@@ -470,28 +477,40 @@ class LigandRMSD(Step):
 
         # Select the best docked structures based on RMSD
         best_docked_structure_df = select_best_docked_structures(rmsd_df)
+        #print(best_docked_structure_df)
 
-        # Merge with the original df to keep metadata
-        rmsd_df_for_merge = rmsd_df.drop(columns=['Entry', 'docked_structure1', 'docked_structure2', 'tool1', 'tool2'])
-        rmsd_df = pd.merge(df, rmsd_df_for_merge, on='pdb_file', how='left')
+        # Merge metadata into pairwise df (keep pairwise as left table)
+        rmsd_df = rmsd_df.merge(df, on='Entry', how='left')
+        #print(rmsd_df)
 
-        # Save the RMSD DataFrame
-        pkl_file = Path(self.output_dir).parent / "ligandRMSD.pkl"
-        rmsd_df.to_pickle(pkl_file)
+        # Map each structure to the methods it was picked by
+        best_map = (
+            best_docked_structure_df
+            .groupby(['Entry', 'best_structure'])['method']
+            .apply(lambda x: ','.join(sorted(set(x))))
+            .reset_index()
+            .rename(columns={'best_structure': 'docked_structure', 'method': 'best_method'})
+        )
+        #print(best_map)
+        # Per-structure single-row DataFrame
+        per_entry_structures = pd.concat([
+            rmsd_df[['Entry', 'docked_structure1']].rename(columns={'docked_structure1': 'docked_structure'}),
+            rmsd_df[['Entry', 'docked_structure2']].rename(columns={'docked_structure2': 'docked_structure'})
+        ], ignore_index=True).dropna(subset=['docked_structure']).drop_duplicates()
+        print(per_entry_structures.docked_structure)
 
-        
-        columns_to_exclude = ['docked_structure1', 'docked_structure2', 'tool1', 'tool2', 'vina_affinities', 'chai_aggregate_score',
-       'chai_ptm', 'chai_iptm', 'chai_per_chain_ptm',
-       'chai_per_chain_pair_iptm', 'chai_has_clashes',
-       'chai_chain_chain_clashes', 'boltz2_confidence_score', 'boltz2_ptm',
-       'boltz2_iptm', 'boltz2_ligand_iptm', 'boltz2_protein_iptm',
-       'boltz2_complex_plddt', 'boltz2_complex_iplddt', 'boltz2_complex_pde',
-       'boltz2_complex_ipde', 'boltz2_chains_ptm', 'boltz2_pair_chains_iptm']
-        rmsd_subset = rmsd_df.drop(columns=columns_to_exclude)
-        rmsd_subset = rmsd_subset.drop_duplicates(subset="Entry", keep="first")
-        merged_df = pd.merge(best_docked_structure_df, rmsd_subset, on="Entry", how="left")
+        # Get tool for each structure
+        per_entry_structures['tool'] = per_entry_structures['docked_structure'].apply(get_tool_from_structure_name)
 
-        return merged_df             
+        # Merge stats per entry
+        structures_df = per_entry_structures.merge(df, on='Entry', how='left', suffixes=('_drop', ''))
+        # Drop the duplicates from per_entry_structures
+        drop_cols = [c for c in structures_df.columns if c.endswith('_drop')]
+        structures_df = structures_df.drop(columns=drop_cols)
+        print(structures_df.docked_structure)
+        structures_df = structures_df.merge(best_map, on=['Entry', 'docked_structure'], how='left')
+
+        return rmsd_df, structures_df    
 
 
     def execute(self, df) -> pd.DataFrame:

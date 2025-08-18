@@ -10,6 +10,7 @@ from io import StringIO
 from biotite.structure import AtomArrayStack
 from biotite.structure.io.pdb import PDBFile
 from rdkit import Chem
+from rdkit.Chem.rdchem import Mol
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -164,21 +165,21 @@ def extract_ligand_from_PDB(input_pdb, output_pdb, ligand_resname):
     io.save(str(output_pdb), LigandSelect(ligand_resname))
 
 
-def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
+def add_metrics(best_strucutures_df, df_dockmetrics):
     """
     Merges docking metrics from df_dockmetrics into best_strucutures_df based on the 'Entry' column.
     Extracts structure IDs and vina indices from the 'best_structure' column.
     """
-    dict_columns = [
-        "chai_aggregate_score", "chai_ptm", "chai_iptm",
+    chai_columns = ["chai_aggregate_score", "chai_ptm", "chai_iptm",
         "chai_per_chain_ptm", "chai_per_chain_pair_iptm", 
-        "chai_has_clashes", "chai_chain_chain_clashes", 
-        "boltz2_confidence_score", "boltz2_ptm", "boltz2_iptm", 
+        "chai_has_clashes", "chai_chain_chain_clashes"]
+    
+    boltz_columns = ["boltz2_confidence_score", "boltz2_ptm", "boltz2_iptm", 
         "boltz2_ligand_iptm", "boltz2_protein_iptm", 
         "boltz2_complex_plddt", "boltz2_complex_iplddt", 
         "boltz2_complex_pde", "boltz2_complex_ipde", 
-        "boltz2_chains_ptm", "boltz2_pair_chains_iptm"
-    ]
+        "boltz2_chains_ptm", "boltz2_pair_chains_iptm"]
+    
 
     def extract_structure_id(full_name):
         parts = full_name.split("_")
@@ -186,7 +187,7 @@ def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
             return "_".join(parts[:-1])
         return full_name
 
-    def extract_vina_index(structure):
+    def extract_index(structure):
         if structure.endswith("_vina"):
             try:
                 return int(structure.split("_")[-2])
@@ -198,7 +199,7 @@ def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
     merged_df = pd.merge(best_strucutures_df, df_dockmetrics_reduced, on="Entry", how="left")
 
     # Extract structure ID and replace dict columns with values
-    structure_ids = merged_df["best_structure"].map(extract_structure_id)
+    structure_ids = merged_df["docked_structure"].map(extract_structure_id)
 
     for col in dict_columns:
         merged_df[col] = [
@@ -207,7 +208,7 @@ def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
         ]
 
     # Extract vina affinity
-    vina_indices = merged_df["best_structure"].map(extract_vina_index)
+    vina_indices = merged_df["docked_structure"].map(extract_vina_index)
 
     merged_df["vina_affinity"] = [
         v.get(idx) if isinstance(v, dict) and idx is not None else None
@@ -217,6 +218,75 @@ def add_metrics_to_best_structures(best_strucutures_df, df_dockmetrics):
     merged_df_final = merged_df.drop(columns=["vina_affinities"])
 
     return merged_df_final
+
+
+def extract_docking_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Process a DataFrame containing docked_structure, tool, chai/boltz dict columns,
+    and (optionally) vina_affinities. Extract only the metrics relevant to each row's tool.
+    structure_id = docked_structure with the last underscore-part removed.
+    """
+    chai_columns = [
+        "chai_aggregate_score", "chai_ptm", "chai_iptm",
+        "chai_per_chain_ptm", "chai_per_chain_pair_iptm",
+        "chai_has_clashes", "chai_chain_chain_clashes",
+    ]
+    boltz_columns = [
+        "boltz2_confidence_score", "boltz2_ptm", "boltz2_iptm",
+        "boltz2_ligand_iptm", "boltz2_protein_iptm",
+        "boltz2_complex_plddt", "boltz2_complex_iplddt",
+        "boltz2_complex_pde", "boltz2_complex_ipde",
+        "boltz2_chains_ptm", "boltz2_pair_chains_iptm",
+        "boltz2_affinity_pred_value", "boltz2_affinity_probability_binary",
+        "boltz2_affinity_pred_value1", "boltz2_affinity_probability_binary1",
+        "boltz2_affinity_pred_value2", "boltz2_affinity_probability_binary2",
+    ]
+
+    if "docked_structure" not in df.columns:
+        raise KeyError("Expected column 'docked_structure' not found.")
+    if "tool" not in df.columns:
+        raise KeyError("Expected column 'tool' not found.")
+
+    out = df.copy()
+
+    out["structure_id"] = (
+        out["docked_structure"].astype(str).str.rsplit("_", n=1).str[0]
+    )
+
+    tool_lower = out["tool"].astype(str).str.lower()
+    mask_chai  = tool_lower.eq("chai")
+    mask_boltz = tool_lower.str.startswith("boltz")
+    mask_vina  = tool_lower.eq("vina")
+
+    def extract_for_mask(cols, mask):
+        exist = [c for c in cols if c in out.columns]
+        if not exist or not mask.any():
+            return
+        rows = out.loc[mask, exist + ["structure_id"]]
+        for col in exist:
+            out.loc[mask, col] = rows.apply(
+                lambda r: (r[col].get(r["structure_id"]) if isinstance(r[col], dict) else None),
+                axis=1
+            )
+
+    # Extract only the relevant metrics per tool
+    extract_for_mask(chai_columns,  mask_chai)
+    extract_for_mask(boltz_columns, mask_boltz)
+
+    # Vina affinity
+    if "vina_affinities" in out.columns and mask_vina.any():
+        if "vina_affinity" not in out.columns:
+            out["vina_affinity"] = None
+        rows = out.loc[mask_vina, ["vina_affinities", "structure_id"]]
+        out.loc[mask_vina, "vina_affinity"] = rows.apply(
+            lambda r: (r["vina_affinities"].get(r["structure_id"]) if isinstance(r["vina_affinities"], dict) else None),
+            axis=1
+        )
+        out = out.drop(columns=["vina_affinities"])
+
+    # Cleanup
+    out = out.drop(columns=["structure_id"])
+    return out
 
 
 def get_hetatm_chain_ids(pdb_path):
@@ -324,7 +394,6 @@ def closest_ligands_by_element_composition(ligand_mols, reference_smiles, top_k 
     return [mol for mol, _ in out[:top_k]]
 
 
-
 def ensure_3d(m: Chem.Mol) -> Chem.Mol:
     """Make sure we have a conformer (PDB usually has one; this is a fallback)."""
     if m is None:
@@ -335,13 +404,13 @@ def ensure_3d(m: Chem.Mol) -> Chem.Mol:
         m = Chem.RemoveHs(m)
     return m
 
+
 def as_mol(x):
     # In case anything returns (mol, score) or a dict
     if isinstance(x, Mol): return x
     if isinstance(x, tuple) and x and isinstance(x[0], Mol): return x[0]
     if isinstance(x, dict) and isinstance(x.get("mol"), Mol): return x["mol"]
     return None
-
 
 
 def valid_file_list(val):

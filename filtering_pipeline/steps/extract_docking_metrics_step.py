@@ -88,31 +88,6 @@ def round_sig(x, sig=5):
     return x
 
 
-def extract_boltz2_metrics(json_path):
-    """
-    Extracts and rounds Boltz2 metrics from a .json file into a dictionary.
-    Each value is rounded to 5 significant digits.
-    """
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-
-    return {
-        "filename": json_path.stem,
-        "boltz2_confidence_score": round_sig(data.get("confidence_score")),
-        "boltz2_ptm": round_sig(data.get("ptm")),
-        "boltz2_iptm": round_sig(data.get("iptm")),
-        "boltz2_ligand_iptm": round_sig(data.get("ligand_iptm")),
-        "boltz2_protein_iptm": round_sig(data.get("protein_iptm")),
-        "boltz2_complex_plddt": round_sig(data.get("complex_plddt")),
-        "boltz2_complex_iplddt": round_sig(data.get("complex_iplddt")),
-        "boltz2_complex_pde": round_sig(data.get("complex_pde")),
-        "boltz2_complex_ipde": round_sig(data.get("complex_ipde")),
-        "boltz2_chains_ptm": round_sig(data.get("chains_ptm", {})),
-        "boltz2_pair_chains_iptm": round_sig(data.get("pair_chains_iptm", {})),
-    }
-
-
-
 def extract_boltz2_metrics_from_json(conf_json_path):
     with open(conf_json_path, "r") as f:
         data = json.load(f)
@@ -130,6 +105,21 @@ def extract_boltz2_metrics_from_json(conf_json_path):
         "chains_ptm": data.get("chains_ptm", {}),
         "pair_chains_iptm": data.get("pair_chains_iptm", {}),
     }
+
+
+def extract_boltz2_affinity(conf_json_path):
+    with open(conf_json_path, "r") as f:
+        data = json.load(f)
+
+    return {
+        "affinity_pred_value": round(data.get("affinity_pred_value", 0.0), 5),
+        "affinity_probability_binary": round(data.get("affinity_probability_binary", 0.0), 5),
+        "affinity_pred_value1": round(data.get("affinity_pred_value1", 0.0), 5),
+        "affinity_probability_binary1": round(data.get("affinity_probability_binary1", 0.0), 5),
+        "affinity_pred_value2": round(data.get("affinity_pred_value2", 0.0), 5),
+        "affinity_probability_binary2": round(data.get("affinity_probability_binary2", 0.0), 5),
+    }
+
 
 class DockingMetrics(Step):
     def __init__(self, input_dir='pipeline_output/docking', output_dir='pipeline_output/docking'):
@@ -175,7 +165,7 @@ class DockingMetrics(Step):
                     iptm_dict[fname] = round_sig(metrics["iptm"])
                     per_chain_ptm_dict[fname] = round_sig(metrics["per_chain_ptm"])
                     per_chain_pair_iptm_dict[fname] = round_sig(metrics["per_chain_pair_iptm"])
-                    has_clashes_dict[fname] = metrics["has_inter_chain_clashes"]  # boolean
+                    has_clashes_dict[fname] = metrics["has_inter_chain_clashes"]  
                     chain_chain_clashes_dict[fname] = round_sig(metrics["chain_chain_clashes"])
 
                 except Exception as e:
@@ -208,9 +198,16 @@ class DockingMetrics(Step):
                 "boltz2_complex_pde": {},
                 "boltz2_complex_ipde": {},
                 "boltz2_chains_ptm": {},
-                "boltz2_pair_chains_iptm": {}
+                "boltz2_pair_chains_iptm": {}, 
+                "boltz2_affinity_pred_value": {}, 
+                "boltz2_affinity_probability_binary":{}, 
+                "boltz2_affinity_pred_value1": {}, 
+                "boltz2_affinity_probability_binary1": {}, 
+                "boltz2_affinity_pred_value2": {}, 
+                "boltz2_affinity_probability_binary2": {}
             }
 
+            # extract folding and docking metrics
             for json_file in sorted(boltz2_dir.glob("confidence_*.json")):
                 model_name = json_file.stem.replace("confidence_", "").replace(".json", "")
                 try:
@@ -229,7 +226,23 @@ class DockingMetrics(Step):
                     boltz2_metrics_per_model["boltz2_pair_chains_iptm"][model_name] = metrics["pair_chains_iptm"]
 
                 except Exception as e:
-                    print(f"ailed to parse {json_file.name}: {e}")
+                    print(f"failed to parse {json_file.name}: {e}")
+
+            # extract affinity
+            for json_file in sorted(boltz2_dir.glob("affinity_*.json")):
+                model_name = json_file.stem.replace("confidence_", "").replace(".json", "")
+                try: 
+                    metrics = extract_boltz2_affinity(json_file)
+
+                    boltz2_metrics_per_model["boltz2_affinity_pred_value"][model_name] = metrics["affinity_pred_value"]
+                    boltz2_metrics_per_model["boltz2_affinity_probability_binary"][model_name] = metrics["affinity_probability_binary"]
+                    boltz2_metrics_per_model["boltz2_affinity_pred_value1"][model_name] = metrics["affinity_pred_value1"]
+                    boltz2_metrics_per_model["boltz2_affinity_probability_binary1"][model_name] = metrics["affinity_probability_binary1"]
+                    boltz2_metrics_per_model["boltz2_affinity_pred_value2"][model_name] = metrics["affinity_pred_value2"]
+                    boltz2_metrics_per_model["boltz2_affinity_probability_binary2"][model_name] = metrics["affinity_probability_binary2"]
+
+                except Exception as e:
+                    print(f"failed to parse {json_file.name}: {e}")
 
             row_result.update(boltz2_metrics_per_model)
             results.append(row_result)

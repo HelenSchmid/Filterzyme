@@ -462,7 +462,7 @@ class GeneralGeometricFiltering(Step):
 
         for _, row in df.iterrows():
             entry_name = row['Entry']
-            best_structure_name = row['best_structure']
+            docked_structure_name = row['docked_structure']
             catalytic_residues = str(row['catalytic_residues'])
             substrate_smiles = row['substrate_smiles']
             cofactor_smiles = row['cofactor_smiles']
@@ -479,7 +479,7 @@ class GeneralGeometricFiltering(Step):
             }
             try: 
                 # Load full PDB structure
-                pdb_file = self.preparedfiles_dir / f"{best_structure_name}.pdb"
+                pdb_file = self.preparedfiles_dir / f"{docked_structure_name}.pdb"
                 pdb_file = Path(pdb_file)
                 print(f"Processing PDB file: {pdb_file.name}")
 

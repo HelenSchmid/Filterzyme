@@ -12,7 +12,7 @@ from biotite.structure.io.pdb import PDBFile
 from biotite.structure import AtomArrayStack
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdFMCS, rdmolops
-from rdkit.Chem.rdchem import Mol
+#from rdkit.Chem.rdchem import Mol
 from rdkit.Geometry import Point3D
 from rdkit import RDLogger
 from itertools import product
@@ -171,9 +171,9 @@ def mcs_match_indices(ligand: Chem.Mol, moiety_smiles: str, timeout=5):
 def moiety_centroid_with_fallbacks(
     mol: Chem.Mol,
     moiety_smiles: str,
+    ligand_or_cofactor: str,
     grow_mcs_by_one_bond: bool = True,
-    use_chirality: bool = False
-):
+    use_chirality: bool = False):
     """
     1) strict substructure → 2) tolerant substructure → 3) MCS → 4) whole-ligand.
     Returns (centroids_list, method_label, used_indices_list).
@@ -198,12 +198,12 @@ def moiety_centroid_with_fallbacks(
                 for nb in a.GetNeighbors():
                     core.add(nb.GetIdx())
         cent = centroid_from_indices(mol, list(core))
-        logger.warning(f"Ligand-substructure matching using MSC")
+        logger.warning(f"Substructure matching using MSC for {ligand_or_cofactor}")
         return [cent], "mcs" if not grow_mcs_by_one_bond else "mcs", list(core)
 
     # 4) fallback: whole-ligand centroid
     all_idx = tuple(range(mol.GetNumAtoms()))
-    logger.warning(f"Ligand-substructure centroid calculation unsuccessfull. Use whole-ligand centroid instead.")
+    logger.warning(f"Substructure centroid calculation for {ligand_or_cofactor} unsuccessfull. Use whole-molecule centroid instead.")
     return centroids_from_matches(mol, all_idx), "whole_ligand", list(all_idx)
 
 def coords_of_atoms(mol, atom_indices):
@@ -432,7 +432,7 @@ def get_all_nucs_atom_coords(pdb_path: str):
 
 class GeneralGeometricFiltering(Step):
 
-    def __init__(self, preparedfiles_dir: str = '', esterase = 0, find_closest_nucleophile = 0, output_dir: str= ''):
+    def __init__(self, preparedfiles_dir: str = '', output_dir: str= ''):
 
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -447,7 +447,7 @@ class GeneralGeometricFiltering(Step):
 
         for _, row in df.iterrows():
             entry_name = row['Entry']
-            best_structure_name = row['best_structure']
+            docked_structure_name = row['docked_structure']
             catalytic_residues = str(row['catalytic_residues'])
             substrate_smiles = row['substrate_smiles']
             cofactor_smiles = row['cofactor_smiles']
@@ -466,7 +466,7 @@ class GeneralGeometricFiltering(Step):
             }
             try: 
                 # Load full PDB structure
-                pdb_file = self.preparedfiles_dir / f"{best_structure_name}.pdb"
+                pdb_file = self.preparedfiles_dir / f"{docked_structure_name}.pdb"
                 pdb_file = Path(pdb_file)
                 print(f"Processing PDB file: {pdb_file.name}")
 
@@ -487,7 +487,7 @@ class GeneralGeometricFiltering(Step):
 
                 # Find ligand substructure match with moiety of interest and calculate ligand-centroid
                 ligand_centroid, lig_method, lig_used = moiety_centroid_with_fallbacks(
-                    ligand_mol, substrate_moiety, grow_mcs_by_one_bond=True,
+                    ligand_mol,substrate_moiety, 'ligand', grow_mcs_by_one_bond=True,
                     use_chirality=False)
                 
                 row_result["ligand_moiety_method"] = lig_method
@@ -507,6 +507,7 @@ class GeneralGeometricFiltering(Step):
                     cofactor_centroid, cof_method, cof_used = moiety_centroid_with_fallbacks(
                         cofactor_mol,
                         cofactor_moiety,
+                        'cofactor',
                         grow_mcs_by_one_bond=True,
                         use_chirality=False
                     )

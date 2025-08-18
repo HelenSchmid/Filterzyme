@@ -5,7 +5,7 @@ import logging
 import os
 
 from filtering_pipeline.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path, generate_chai_structure_path
-from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs, add_metrics_to_best_structures, valid_file_list
+from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs, extract_docking_metrics, valid_file_list, add_metrics
 from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
 from filtering_pipeline.steps.save_step import Save
 from filtering_pipeline.steps.dock_vina_step import Vina
@@ -16,7 +16,7 @@ from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
 from filtering_pipeline.steps.superimposestructures_step import SuperimposeStructures
 from filtering_pipeline.steps.computeproteinRMSD_step import ProteinRMSD
 from filtering_pipeline.steps.computeligandRMSD_step import LigandRMSD
-from filtering_pipeline.steps.geometric_filtering_cofactor import GeneralGeometricFiltering
+from filtering_pipeline.steps.geometric_filtering_cofactor_MCS import GeneralGeometricFiltering
 from filtering_pipeline.steps.geometric_filtering_esterase import EsteraseGeometricFiltering
 from filtering_pipeline.steps.fpocket_step import Fpocket
 from filtering_pipeline.steps.ligandSASA_step import LigandSASA
@@ -47,6 +47,7 @@ class Docking:
         self.df = df.copy()
         self.squidly_dir = Path(squidly_dir) 
         self.skip_catalytic_residue_prediction = skip_catalytic_residue_prediction
+        self.alternative_structure_for_vina = alternative_structure_for_vina
         self.num_threads = num_threads
         self.output_dir = Path(output_dir)
         self.metagenomic_enzymes = metagenomic_enzymes
@@ -140,17 +141,17 @@ class Docking:
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz
 
-    def _run_vina(self, df_boltz, alternative_structure_for_vina):
+    def _run_vina(self, df_boltz):
         log_subsection("Docking using Vina")
         vina_dir = Path(self.output_dir) / 'vina/'
         vina_dir.mkdir(exist_ok=True, parents=True)
         delete_empty_subdirs(vina_dir)
 
         if self.metagenomic_enzymes == 1:
-            if alternative_structure_for_vina == 'Chai':
+            if self.alternative_structure_for_vina == 'Chai':
                 log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' )    
                 df_boltz['structure'] = df_boltz['chai_dir'].apply(generate_chai_structure_path)
-            elif alternative_structure_for_vina == 'Boltz':
+            elif self.alternative_structure_for_vina == 'Boltz':
                 log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' )    
                 df_boltz['structure'] = df_boltz['boltz_dir'].apply(generate_boltz_structure_path)
 
@@ -167,7 +168,7 @@ class Docking:
             delete_empty_subdirs(vina_dir)    
 
             # Prepare missing entries with Chai structure
-            if alternative_structure_for_vina == 'Chai':
+            if self.alternative_structure_for_vina == 'Chai':
                 log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' + f'Entries: {list(missing_entries)}')    
                 df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
                 df_missing['structure'] = df_missing['chai_dir'].apply(generate_chai_structure_path)  
@@ -175,7 +176,7 @@ class Docking:
 
 
             # Prepare missing entries with Boltz structure
-            elif alternative_structure_for_vina == 'Boltz':
+            elif self.alternative_structure_for_vina == 'Boltz':
                 log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' + f'Entries: {list(missing_entries)}')    
                 df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
                 df_missing['structure'] = df_missing['boltz_dir'].apply(generate_boltz_structure_path)
@@ -224,7 +225,7 @@ class Superimposition:
         log_subsection('Calculating protein RMSDs')
         df_proteinRMSD_all, df_proteinRMSD  = self._proteinRMSD(df_sup)
         log_subsection('Calculating ligand RMSDs')
-        df_ligandRMSD = self._ligandRMSD(df_proteinRMSD)
+        df_ligandRMSD_all, df_ligandRMSD = self._ligandRMSD(df_proteinRMSD)
         return df_ligandRMSD
 
 
@@ -261,10 +262,11 @@ class Superimposition:
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
-        df_ligandRMSD, df_structures = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
-        df_best_structures_w_metrics = add_metrics_to_best_structures(df_best_structures, pd.read_pickle(Path(self.output_dir).parent / 'docking/dockingmetrics.pkl'))
-        df_best_structures_w_metrics.to_pickle(Path(self.output_dir) / 'best_structures.pkl')
-        return df_best_structures_w_metrics
+        df_ligandRMSD_pairwise, df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
+        df_ligandRMSD_w_metrics = extract_docking_metrics(df_ligandRMSD)
+        df_ligandRMSD_w_metrics.to_pickle(Path(self.output_dir) / 'ligandRMSD.pkl')
+        df_ligandRMSD_pairwise.to_pickle(Path(self.output_dir)/ 'ligandRMSD_pairwise.pkl')
+        return df_ligandRMSD_pairwise, df_ligandRMSD_w_metrics
 
 
 class GeometricFilters:
@@ -380,7 +382,7 @@ class Pipeline:
 
         # Geometric filtering for best structure only
         gf = GeometricFilters(
-            df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/best_structures.pkl'),
+            df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/ligandRMSD.pkl'),
             esterase=self.esterase,
             input_dir=Path(self.base_output_dir) / "superimposition",
             output_dir=Path(self.base_output_dir) / "geometricfiltering",

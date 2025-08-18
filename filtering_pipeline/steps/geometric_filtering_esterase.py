@@ -431,7 +431,7 @@ class EsteraseGeometricFiltering(Step):
 
         for _, row in df.iterrows():
             entry_name = row['Entry']
-            best_structure_name = row['best_structure'] # best_structure
+            docked_structure_name = row['docked_structure'] # docked_structure
             squidly_residues = str(row['Squidly_CR_Position'])
             substrate_smiles = row['substrate_smiles']
             substrate_moiety = row['substrate_moiety']
@@ -446,7 +446,7 @@ class EsteraseGeometricFiltering(Step):
 
             try:
                 # Load full PDB structure
-                pdb_file = self.preparedfiles_dir / f"{best_structure_name}.pdb"
+                pdb_file = self.preparedfiles_dir / f"{docked_structure_name}.pdb"
                 print(f"Processing PDB file: {pdb_file.name}")
                 protein_structure = load_pdb_structure(pdb_file)
 

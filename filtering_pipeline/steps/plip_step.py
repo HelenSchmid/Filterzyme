@@ -93,7 +93,7 @@ class PLIP(Step):
 
         for _, row in df.iterrows():
             entry_name = row['Entry']
-            best_structure_name = row['best_structure']
+            best_structure_name = row['docked_structure']
             substrate_smiles = row['substrate_smiles']
             pdb_file_as_path = Path(self.input_dir / f"{best_structure_name}.pdb")
             pdb_file_as_str = str(self.input_dir / f"{best_structure_name}.pdb")

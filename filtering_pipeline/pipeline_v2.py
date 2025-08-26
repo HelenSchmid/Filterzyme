@@ -377,7 +377,6 @@ class Pipeline:
         superimp.run()  
 
 
-
         # Geometric filtering for all structures
 
         # Geometric filtering for best structure only

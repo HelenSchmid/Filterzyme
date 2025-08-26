@@ -1,7 +1,9 @@
 import os
 import sys
 import pandas as pd
+import numpy as np
 import logging
+import textwrap
 from pathlib import Path
 from Bio.PDB import PDBParser, PDBIO, Select
 import re
@@ -20,7 +22,7 @@ logging.basicConfig(
 )
 
 # Define plotting aesthetics 
-def clean_plt(ax):
+def clean_plt(ax, max_label_chars=25):
     ax.tick_params(direction='out', length=2, width=1.0)
     ax.spines['bottom'].set_linewidth(1.0)
     ax.spines['top'].set_linewidth(0)
@@ -29,6 +31,14 @@ def clean_plt(ax):
     ax.tick_params(labelsize=10.0)
     ax.tick_params(axis='x', which='major', pad=2.0)
     ax.tick_params(axis='y', which='major', pad=2.0)
+
+    # --- Wrap axis labels if too long ---
+    for which in ["x", "y"]:
+        label = getattr(ax, f"get_{which}label")()
+        if label and len(label) > max_label_chars:
+            wrapped = "\n".join(textwrap.wrap(label, max_label_chars))
+            getattr(ax, f"set_{which}label")(wrapped)
+
     return ax
 
 # Define logging titles
@@ -253,6 +263,8 @@ def extract_docking_metrics(df: pd.DataFrame) -> pd.DataFrame:
         out["docked_structure"].astype(str).str.rsplit("_", n=1).str[0]
     )
 
+    out["vina_id"] = (out["docked_structure"].astype(str).str.split("_").str[-2])  
+
     tool_lower = out["tool"].astype(str).str.lower()
     mask_chai  = tool_lower.eq("chai")
     mask_boltz = tool_lower.str.startswith("boltz")
@@ -277,15 +289,100 @@ def extract_docking_metrics(df: pd.DataFrame) -> pd.DataFrame:
     if "vina_affinities" in out.columns and mask_vina.any():
         if "vina_affinity" not in out.columns:
             out["vina_affinity"] = None
-        rows = out.loc[mask_vina, ["vina_affinities", "structure_id"]]
+        rows = out.loc[mask_vina, ["vina_affinities", "vina_id"]]
         out.loc[mask_vina, "vina_affinity"] = rows.apply(
-            lambda r: (r["vina_affinities"].get(r["structure_id"]) if isinstance(r["vina_affinities"], dict) else None),
+            lambda r: (r["vina_affinities"].get(r["vina_id"]) if isinstance(r["vina_affinities"], dict) else None),
             axis=1
         )
         out = out.drop(columns=["vina_affinities"])
 
     # Cleanup
     out = out.drop(columns=["structure_id"])
+    return out
+
+
+def extract_docking_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Process a DataFrame containing docked_structure, tool, chai/boltz dict columns,
+    and (optionally) vina_affinities. Extract only the metrics relevant to each row's tool.
+    structure_id = docked_structure with the last underscore-part removed.
+    """
+    chai_columns = [
+        "chai_aggregate_score", "chai_ptm", "chai_iptm",
+        "chai_per_chain_ptm", "chai_per_chain_pair_iptm",
+        "chai_has_clashes", "chai_chain_chain_clashes",
+    ]
+    boltz_columns = [
+        "boltz2_confidence_score", "boltz2_ptm", "boltz2_iptm",
+        "boltz2_ligand_iptm", "boltz2_protein_iptm",
+        "boltz2_complex_plddt", "boltz2_complex_iplddt",
+        "boltz2_complex_pde", "boltz2_complex_ipde",
+        "boltz2_chains_ptm", "boltz2_pair_chains_iptm",
+        "boltz2_affinity_pred_value", "boltz2_affinity_probability_binary",
+        "boltz2_affinity_pred_value1", "boltz2_affinity_probability_binary1",
+        "boltz2_affinity_pred_value2", "boltz2_affinity_probability_binary2",
+    ]
+
+    if "docked_structure" not in df.columns:
+        raise KeyError("Expected column 'docked_structure' not found.")
+    if "tool" not in df.columns:
+        raise KeyError("Expected column 'tool' not found.")
+
+    out = df.copy()
+
+    # structure_id: everything before the final underscore
+    out["structure_id"] = out["docked_structure"].astype(str).str.rsplit("_", n=1).str[0]
+
+    # id just before the final part (e.g. pose index for vina)
+    out["vina_id"] = out["docked_structure"].astype(str).str.split("_").str[-2]
+    # make it numeric so it can match integer dict keys
+    out["vina_id"] = pd.to_numeric(out["vina_id"], errors="coerce")
+
+    tool_lower = out["tool"].astype(str).str.lower()
+    mask_chai  = tool_lower.eq("chai")
+    mask_boltz = tool_lower.str.startswith("boltz")
+    mask_vina  = tool_lower.eq("vina")
+
+    def safe_get(d, key):
+        """Try int key, then str key; return NaN if not a dict/missing."""
+        if not isinstance(d, dict) or pd.isna(key):
+            return np.nan
+        return d.get(key, d.get(str(int(key)) if pd.api.types.is_number(key) else str(key), np.nan))
+
+    def extract_for_mask(cols, mask):
+        exist = [c for c in cols if c in out.columns]
+        if not exist:
+            return
+        # Clear non-relevant rows to NaN so we don't leave dicts around
+        out.loc[~mask, exist] = np.nan
+        if not mask.any():
+            return
+        rows = out.loc[mask, exist + ["structure_id"]]
+        for col in exist:
+            out.loc[mask, col] = rows.apply(
+                lambda r: r[col].get(r["structure_id"]) if isinstance(r[col], dict) else r[col],
+                axis=1
+            )
+
+    # Extract only the relevant metrics per tool
+    extract_for_mask(chai_columns,  mask_chai)
+    extract_for_mask(boltz_columns, mask_boltz)
+
+    # Vina affinity (dict keyed by pose index)
+    if "vina_affinities" in out.columns:
+        # Clear non-vina rows
+        out.loc[~mask_vina, "vina_affinity"] = np.nan
+        if mask_vina.any():
+            rows = out.loc[mask_vina, ["vina_affinities", "vina_id"]]
+            out.loc[mask_vina, "vina_affinity"] = rows.apply(
+                lambda r: safe_get(r["vina_affinities"], r["vina_id"]),
+                axis=1
+            )
+        # Drop the dict column now that we've extracted the value
+        out = out.drop(columns=["vina_affinities"])
+
+    # Cleanup helper columns
+    out = out.drop(columns=["structure_id", "vina_id"])
     return out
 
 

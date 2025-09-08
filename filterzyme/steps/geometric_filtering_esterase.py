@@ -15,7 +15,7 @@ from rdkit.Chem.Draw.rdMolDraw2D import MolDrawOptions
 from rdkit import RDLogger
 import tempfile
 
-from filtering_pipeline.steps.step import Step
+from filterzyme.steps.step import Step
 
 RDLogger.DisableLog('rdApp.warning')
 logger = logging.getLogger(__name__)

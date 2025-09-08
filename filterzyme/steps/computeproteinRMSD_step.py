@@ -1,5 +1,5 @@
-from filtering_pipeline.steps.step import Step
-from filtering_pipeline.utils.helpers import clean_plt,extract_entry_name_from_PDB_filename
+from filterzyme.steps.step import Step
+from filterzyme.utils.helpers import clean_plt,extract_entry_name_from_PDB_filename
 
 import pandas as pd
 from pathlib import Path

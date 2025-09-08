@@ -12,7 +12,7 @@ from biotite.structure.io.pdb import PDBFile
 from biotite.structure import AtomArrayStack
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdFMCS, rdmolops
-#from rdkit.Chem.rdchem import Mol
+from rdkit.Chem.rdchem import Mol
 from rdkit.Geometry import Point3D
 from rdkit import RDLogger
 from itertools import product
@@ -20,10 +20,7 @@ from io import StringIO
 import tempfile
 from collections import Counter
 
-from filtering_pipeline.steps.step import Step
-from filtering_pipeline.utils.helpers import get_hetatm_chain_ids, norm_l1_dist,atom_composition_fingerprint
-from filtering_pipeline.utils.helpers import closest_ligands_by_element_composition, atom_composition_fingerprint, extract_chain_as_rdkit_mol
-from filtering_pipeline.utils.helpers import as_mol, ensure_3d
+from filterzyme.steps.step import Step
 
 RDLogger.DisableLog('rdApp.warning')
 
@@ -53,6 +50,123 @@ atom_selection = {
     'GLY': []              # No side chain; may participate via backbone flexibility
 }
 
+
+def get_hetatm_chain_ids(pdb_path):
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    structure = structure[0]
+
+    hetatm_chains = set(structure.chain_id[structure.hetero])
+    atom_chains = set(structure.chain_id[~structure.hetero])
+
+    # Exclude chains that also have ATOM records (i.e., protein chains)
+    ligand_only_chains = hetatm_chains - atom_chains
+
+    return list(ligand_only_chains)
+
+def _norm_l1_dist(fp_a, fp_b, keys=None):
+    """
+    Normalized L1 distance on element counts. Used to pick the closest element-count vector
+    of all ligands to the reference ligand. 
+    """
+    if keys is None:
+        keys = set(fp_a) | set(fp_b)
+    num = 0.0
+    den = 0.0
+    for k in keys:
+        a = fp_a.get(k, 0)
+        b = fp_b.get(k, 0)
+        num += abs(a - b)
+        den += a + b
+    return 0.0 if den == 0 else num / den
+
+def extract_chain_as_rdkit_mol(pdb_path, chain_id, sanitize=False):
+    '''
+    Extract ligand chain as RDKit mol objects given their chain ID. 
+    '''
+    # Read full structure
+    with open(pdb_path, "r") as f:
+        pdb_file = PDBFile.read(f)
+    structure = pdb_file.get_structure()
+    if isinstance(structure, AtomArrayStack):
+        structure = structure[0]  # first model only
+
+    # Extract chain
+    mask = structure.chain_id == chain_id
+
+    if len(mask) != structure.array_length():
+        raise ValueError(f"Mask shape {mask.shape} doesn't match atom array length {structure.array_length()}")
+
+    chain = structure[mask]
+
+    if chain.shape[0] == 0:
+        raise ValueError(f"No atoms found for chain {chain_id} in {pdb_path}")
+
+    # Convert to PDB string using Biotite
+    temp_pdb = PDBFile()
+    temp_pdb.set_structure(chain)
+    pdb_str_io = StringIO()
+    temp_pdb.write(pdb_str_io)
+    pdb_str = pdb_str_io.getvalue()
+
+    # Convert to RDKit mol from PDB string
+    mol = Chem.MolFromPDBBlock(pdb_str, sanitize=sanitize)
+
+    return mol
+
+def atom_composition_fingerprint(mol):
+    """
+    Returns a Counter of atom symbols in the molecule (e.g., {'C': 10, 'N': 2}).
+    """
+    return Counter([atom.GetSymbol() for atom in mol.GetAtoms()])
+
+def closest_ligands_by_element_composition(ligand_mols, reference_smiles, top_k = 2):
+    """
+    Filters a list of RDKit Mol objects based on atom element composition
+    matching a reference SMILES. It returns a mol object that matches the element composition. 
+    Because sometimes some atoms especially hydrogens can get lost in conversions, I pick the ligand
+    with the closest atom composition to the reference; doesn't have to match perfectly. 
+    """
+    ref_mol = Chem.MolFromSmiles(reference_smiles)
+    if ref_mol is None:
+        raise ValueError("Reference SMILES could not be parsed.")
+
+    # calculate atom composition of the reference smile string i.e. the ligand of interest
+    ref_fp = atom_composition_fingerprint(ref_mol)
+
+    out = []
+    for mol in ligand_mols:
+        if mol is None:
+            continue
+        try:
+            fp = atom_composition_fingerprint(mol)
+            dist = _norm_l1_dist(ref_fp, fp)
+            score = 1.0 - dist
+            out.append((mol, score))
+        except Exception as e:
+            print(f"Error processing ligand: {e}")
+            continue
+    # return closest matching lgiands
+    out.sort(key=lambda t: t[1], reverse=True)
+    return [mol for mol, _ in out[:top_k]]
+
+def ensure_3d(m: Chem.Mol) -> Chem.Mol:
+    """Make sure we have a conformer (PDB usually has one; this is a fallback)."""
+    if m is None:
+        return None
+    if m.GetNumConformers() == 0:
+        m = Chem.AddHs(m)
+        AllChem.EmbedMolecule(m, randomSeed=0xf00d)
+        m = Chem.RemoveHs(m)
+    return m
+
+def as_mol(x):
+    # In case anything returns (mol, score) or a dict
+    if isinstance(x, Mol): return x
+    if isinstance(x, tuple) and x and isinstance(x[0], Mol): return x[0]
+    if isinstance(x, dict) and isinstance(x.get("mol"), Mol): return x["mol"]
+    return None
 
 def assign_bond_orders_from_smiles(pdb_mol, ligand_smiles):
     """
@@ -98,113 +212,15 @@ def assign_bond_orders_from_smiles(pdb_mol, ligand_smiles):
         print("AssignBondOrdersFromTemplate failed:", e)
         return pdb_mol
 
-def tolerant_query_from_smiles(moiety_smiles: str):
+def find_substructure_matches(mol, sub, is_smarts=False, use_chirality=False):
     """
-    Build a relaxed query smiles (from ligand or cofactor moiety column) to survive kekulization/aromatic/protonation quirks.
+    Input can be SMILES (default) or SMARTS (if is_smarts=True).
+    Returns list of tuples of atom indices.
     """
-    q = Chem.MolFromSmiles(moiety_smiles)
-    if q is None:
-        return None
-    p = Chem.AdjustQueryParameters()
-    # Relax common failure points:
-    p.makeBondsGeneric = True
-    p.matchAromaticToAliphatic = True
-    p.aromatizeIfPossible = False
-    p.adjustDegree = True
-    p.adjustHeavyDegree = True
-    p.adjustRingCount = True
-    p.adjustRingConnectivity = True
-    p.maxImplicitHs = 8
-    return Chem.AdjustQueryMol(q, p)
-
-def find_substructure_matches(
-    mol: Chem.Mol,
-    sub: str,
-    is_smarts: bool = False,
-    use_chirality: bool = False,
-    try_tolerant_on_fail: bool = True
-):
-    """
-    Find substructure atom-index matches. Can use smiles or smarts string as input. 
-    First try strict query and if enable try tolerant query. 
-    """
-    # 1) strict query
     q = Chem.MolFromSmarts(sub) if is_smarts else Chem.MolFromSmiles(sub)
     if q is None:
         raise ValueError("Could not parse substructure pattern.")
-
-    matches = list(mol.GetSubstructMatches(q, useChirality=use_chirality, uniquify=True))
-    if matches or is_smarts or not try_tolerant_on_fail:
-        return matches
-
-    # 2) tolerant retry (SMILES-only path)
-    tq = tolerant_query_from_smiles(sub)
-    if tq is None:
-        return matches  # keep as empty if tolerant build failed
-    logger.warning(f'Strict ligand-substructure matching unsucessfuly, used tolerant query.')
-    return list(mol.GetSubstructMatches(tq, useChirality=False, uniquify=True))
-
-def mcs_match_indices(ligand: Chem.Mol, moiety_smiles: str, timeout=5):
-    """
-    Use MCS between the ligand and the standalone moiety.
-    Returns list of tuples of atom indices in the ligand.
-    """
-    q = Chem.MolFromSmiles(moiety_smiles)
-    if q is None:
-        return []
-    res = rdFMCS.FindMCS(
-        [ligand, q],
-        completeRingsOnly=False,
-        ringMatchesRingOnly=False,
-        bondCompare=rdFMCS.BondCompare.CompareAny,
-        atomCompare=rdFMCS.AtomCompare.CompareElements,
-        matchValences=False,
-        timeout=timeout,
-    )
-    if not res or not res.smartsString:
-        return []
-    mcs = Chem.MolFromSmarts(res.smartsString)
-    if mcs is None:
-        return []
-    return list(ligand.GetSubstructMatches(mcs, uniquify=True))
-
-def moiety_centroid_with_fallbacks(
-    mol: Chem.Mol,
-    moiety_smiles: str,
-    ligand_or_cofactor: str,
-    grow_mcs_by_one_bond: bool = True,
-    use_chirality: bool = False):
-    """
-    1) strict substructure → 2) tolerant substructure → 3) MCS → 4) whole-ligand.
-    Returns (centroids_list, method_label, used_indices_list).
-    """
-    # 1–2) strict then tolerant (your updated function handles both)
-    try:
-        matches = find_substructure_matches(
-            mol, moiety_smiles, is_smarts=False, use_chirality=use_chirality, try_tolerant_on_fail=True
-        )
-    except Exception:
-        matches = []
-    if matches:
-        return centroids_from_matches(mol, matches), "substructure_or_tolerant", list(matches[0])
-
-    # 3) use MSC
-    mcs_matches = mcs_match_indices(mol, moiety_smiles, timeout=5)
-    if mcs_matches:
-        core = set(mcs_matches[0])
-        if grow_mcs_by_one_bond:
-            for idx in list(core):
-                a = mol.GetAtomWithIdx(idx)
-                for nb in a.GetNeighbors():
-                    core.add(nb.GetIdx())
-        cent = centroid_from_indices(mol, list(core))
-        logger.warning(f"Substructure matching using MSC for {ligand_or_cofactor}")
-        return [cent], "mcs" if not grow_mcs_by_one_bond else "mcs", list(core)
-
-    # 4) fallback: whole-ligand centroid
-    all_idx = tuple(range(mol.GetNumAtoms()))
-    logger.warning(f"Substructure centroid calculation for {ligand_or_cofactor} unsuccessfull. Use whole-molecule centroid instead.")
-    return centroids_from_matches(mol, all_idx), "whole_ligand", list(all_idx)
+    return list(mol.GetSubstructMatches(q, useChirality=use_chirality, uniquify = True))
 
 def coords_of_atoms(mol, atom_indices):
     conf = mol.GetConformer()
@@ -429,10 +445,9 @@ def get_all_nucs_atom_coords(pdb_path: str):
     return matching_residues
 
 
-
 class GeneralGeometricFiltering(Step):
 
-    def __init__(self, preparedfiles_dir: str = '', output_dir: str= ''):
+    def __init__(self, preparedfiles_dir: str = '', esterase = 0, find_closest_nucleophile = 0, output_dir: str= ''):
 
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -461,8 +476,6 @@ class GeneralGeometricFiltering(Step):
                 'distance_ligand_to_catalytic_residues': None,
                 'distance_cofactor_to_catalytic_residues': None, 
                 'distance_ligand_to_closest_nuc': None,
-                'ligand_moiety_method': None, 
-                'cofactor_moiety_method': None
             }
             try: 
                 # Load full PDB structure
@@ -485,16 +498,19 @@ class GeneralGeometricFiltering(Step):
                 ligand_mol = assign_bond_orders_from_smiles(ligand_mol, substrate_smiles)
                 ligand_mol  = ensure_3d(ligand_mol)
 
-                # Find ligand substructure match with moiety of interest and calculate ligand-centroid
-                ligand_centroid, lig_method, lig_used = moiety_centroid_with_fallbacks(
-                    ligand_mol,substrate_moiety, 'ligand', grow_mcs_by_one_bond=True,
-                    use_chirality=False)
-                
-                row_result["ligand_moiety_method"] = lig_method
+                # Find ligand substructure match with moiety of interest
+                ligand_match = find_substructure_matches(ligand_mol, substrate_moiety)
+
+                # Calculate ligand-moiety centroid
+                ligand_centroid = centroids_from_matches(ligand_mol, ligand_match)
+
+                if not ligand_centroid:
+                    # optional fallback: whole-ligand centroid
+                    logger.warning(f"Ligand-substructure centroid calculation unsuccessfull. Use whole-ligand centroid instead.")
+                    ligand_centroid = centroids_from_matches(ligand_mol, tuple(range(ligand_mol.GetNumAtoms())))
 
 
                 # --- Distance between ligand and cofactor ---
-
                 # Get cofactor mol object and assign correct bond order based on smiles
                 if 'cofactor_smiles' in df.columns and cofactor_smiles is not None and tool != 'vina':              
                     cofactor_candidate = closest_ligands_by_element_composition(ligands, cofactor_smiles, top_k=1)
@@ -503,15 +519,14 @@ class GeneralGeometricFiltering(Step):
                     cofactor_mol = assign_bond_orders_from_smiles(cofactor_mol, cofactor_smiles)
                     cofactor_mol = ensure_3d(cofactor_mol)
 
-                    # Find cofactor substructure match with moiety of interest and cofactor centroid
-                    cofactor_centroid, cof_method, cof_used = moiety_centroid_with_fallbacks(
-                        cofactor_mol,
-                        cofactor_moiety,
-                        'cofactor',
-                        grow_mcs_by_one_bond=True,
-                        use_chirality=False
-                    )
-                    row_result["cofactor_moiety_method"] = cof_method
+                    # Find cofactor substructure match with moiety of interest
+                    cofactor_match = find_substructure_matches(cofactor_mol, cofactor_moiety)
+
+                    # Calculate cofactor-moiety centroid
+                    cofactor_centroid = centroids_from_matches(cofactor_mol, cofactor_match)
+                    if not cofactor_centroid:
+                        logger.warning(f"Cofactor-substructure centroid calculation unsuccessfull. Use whole-cofactor centroid instead.")
+                        cofactor_centroid = centroids_from_matches(cofactor_mol, tuple(range(cofactor_mol.GetNumAtoms())))
 
                     # Minimum distance between centroids
                     ligand_cofactor_distance = nearest_centroid_distance(ligand_centroid, cofactor_centroid)

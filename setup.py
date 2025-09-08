@@ -14,14 +14,14 @@ def readme():
         return f.read()
 
 
-setup(name='enzyme_filtering_pipeline',
+setup(name='filterzyme',
       version=read_version(),
       description='',
       long_description=readme(),
       long_description_content_type='text/markdown',
       author='Helen Schmid',
       author_email='schmid.helen2@gmail.com',
-      url='https://github.com/HelenSchmid/EnzymeStructuralFiltering',
+      url='https://github.com/HelenSchmid/Filterzyme',
       license='GPL3',
       project_urls={
           "Bug Tracker": "https://github.com/HelenSchmid/EnzymeStructuralFiltering/issues",
@@ -43,7 +43,7 @@ setup(name='enzyme_filtering_pipeline',
       packages=find_packages(),
       entry_points={
           'console_scripts': [
-              'filtering_pipeline = filtering_pipeline.__main__:main'
+              'filterzyme = filterzyme.__main__:main'
           ]
       },
       install_requires=['pandas', 'numpy', 'tqdm', 'biopython', 'biotite', 'matplotlib', 'seaborn', 'rdkit', 'freesasa', 'plip', 'enzymetk', 'docko'],

@@ -41,7 +41,7 @@ The input pandas **DataFrame** must include:
 - `Sequence` – amino acid sequence of the enzyme
 - `substrate_name` – name of the substrate
 - `substrate_smiles` – SMILES string of substrate e.g. MEHP "CCCCC(CC)COC(=O)C1=CC=CC=C1C(=O)O"
-- `substrate_moiety` – SMARTS pattern to define chemical moiety of interest within substrate e.g. general ester SMARTS "[C](=O)(O)(O)"
+- `substrate_moiety` – SMARTS pattern to define chemical moiety of interest within substrate e.g. general ester SMARTS "[C]\(=O)(O)(O)"
 
 If cofactors are included, add:
 - `cofactor_name` – name of the cofactor

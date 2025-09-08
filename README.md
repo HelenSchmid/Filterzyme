@@ -24,14 +24,14 @@ conda activate filterpipeline
 
 ### Clone the repository
 ```bash
-git clone https://github.com/HelenSchmid/EnzymeStructuralFiltering.git
+git clone https://github.com/HelenSchmid/Filterzyme.git
 cd EnzymeStructuralFiltering
 pip install .
 ```
 
-### Coming soon: Install via pip
+###  Install via pip
 ```bash
-pip install enzyme-filtering-pipline
+pip install filterzyme
 ```
 
 ## Usage Example

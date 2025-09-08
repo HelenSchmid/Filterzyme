@@ -4,7 +4,7 @@ import re
 
 
 def read_version():
-    path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'filtering_pipeline/__init__.py')
+    path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'filterzyme/__init__.py')
     with open(path, 'r') as fh:
         return re.search(r'__version__\s?=\s?[\'"](.+)[\'"]', fh.read()).group(1)
 
@@ -24,9 +24,9 @@ setup(name='filterzyme',
       url='https://github.com/HelenSchmid/Filterzyme',
       license='GPL3',
       project_urls={
-          "Bug Tracker": "https://github.com/HelenSchmid/EnzymeStructuralFiltering/issues",
-          "Documentation": "https://github.com/HelenSchmid/EnzymeStructuralFiltering",
-          "Source Code": "https://github.com/HelenSchmid/EnzymeStructuralFiltering",
+          "Bug Tracker": "https://github.com/HelenSchmid/Filterzyme/issues",
+          "Documentation": "https://github.com/HelenSchmid/Filterzyme",
+          "Source Code": "https://github.com/HelenSchmid/Filterzyme",
       },
       classifiers=[
           'Development Status :: 5 - Production/Stable',

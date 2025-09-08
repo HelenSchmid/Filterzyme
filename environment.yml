@@ -20,7 +20,7 @@ dependencies:
   - plip
   - pip:
     - -e /disk1/ariane/vscode/enzyme-tk/
-    - enzyme-filtering-pipeline
+    - filterzyme
     - rdkit
     - freesasa
     - docko

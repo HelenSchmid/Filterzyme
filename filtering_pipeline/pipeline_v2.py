@@ -263,6 +263,7 @@ class Superimposition:
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
         df_ligandRMSD_pairwise, df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
+        df_ligandRMSD.to_pickle(Path(self.output_dir) / 'ligandRMSD_prior.pkl')
         df_ligandRMSD_w_metrics = extract_docking_metrics(df_ligandRMSD)
         df_ligandRMSD_w_metrics.to_pickle(Path(self.output_dir) / 'ligandRMSD.pkl')
         df_ligandRMSD_pairwise.to_pickle(Path(self.output_dir)/ 'ligandRMSD_pairwise.pkl')

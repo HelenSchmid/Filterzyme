@@ -10,7 +10,7 @@ from step import Step
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# WTFFFF?????
+
 
 class PLACER(Step):
     def __init__(self, input_col: str, output_dir: str, predict_ligand: str, nsamples: int = 10, num_threads: int = 1, rerank: str = "prmsd"):

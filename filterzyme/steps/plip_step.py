@@ -8,9 +8,9 @@ from collections import Counter
 from biotite.structure.io.pdb import PDBFile
 from biotite.structure import AtomArrayStack
 
-from filtering_pipeline.steps.step import Step
-from filtering_pipeline.utils.helpers import SingleLigandSelect, suppress_stdout_stderr
-from filtering_pipeline.utils.helpers import get_hetatm_chain_ids, extract_chain_as_rdkit_mol, closest_ligands_by_element_composition
+from filterzyme.steps.step import Step
+from filterzyme.utils.helpers import SingleLigandSelect, suppress_stdout_stderr
+from filterzyme.utils.helpers import get_hetatm_chain_ids, extract_chain_as_rdkit_mol, closest_ligands_by_element_composition
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

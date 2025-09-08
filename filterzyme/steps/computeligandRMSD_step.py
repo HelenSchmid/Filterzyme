@@ -26,8 +26,8 @@ from openbabel import pybel
 from io import StringIO
 import tempfile
 
-from filtering_pipeline.steps.step import Step
-from filtering_pipeline.utils.helpers import clean_plt
+from filterzyme.steps.step import Step
+from filterzyme.utils.helpers import clean_plt
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

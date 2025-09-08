@@ -4,23 +4,23 @@ import pandas as pd
 import logging
 import os
 
-from filtering_pipeline.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path, generate_chai_structure_path
-from filtering_pipeline.utils.helpers import clean_protein_sequence, delete_empty_subdirs, add_metrics_to_best_structures, valid_file_list
-from filtering_pipeline.steps.predict_catalyticsite_step import ActiveSitePred
-from filtering_pipeline.steps.save_step import Save
-from filtering_pipeline.steps.dock_vina_step import Vina
-from filtering_pipeline.steps.extract_docking_metrics_step import DockingMetrics
-from filtering_pipeline.steps.preparevina_step import PrepareVina
-from filtering_pipeline.steps.preparechai_step import PrepareChai
-from filtering_pipeline.steps.prepareboltz_step import PrepareBoltz
-from filtering_pipeline.steps.superimposestructures_step import SuperimposeStructures
-from filtering_pipeline.steps.computeproteinRMSD_step import ProteinRMSD
-from filtering_pipeline.steps.computeligandRMSD_step import LigandRMSD
-from filtering_pipeline.steps.geometric_filtering_cofactor import GeneralGeometricFiltering
-from filtering_pipeline.steps.geometric_filtering_esterase import EsteraseGeometricFiltering
-from filtering_pipeline.steps.fpocket_step import Fpocket
-from filtering_pipeline.steps.ligandSASA_step import LigandSASA
-from filtering_pipeline.steps.plip_step import PLIP
+from filterzyme.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path, generate_chai_structure_path
+from filterzyme.utils.helpers import clean_protein_sequence, delete_empty_subdirs, extract_docking_metrics, valid_file_list, add_metrics
+from filterzyme.steps.predict_catalyticsite_step import ActiveSitePred
+from filterzyme.steps.save_step import Save
+from filterzyme.steps.dock_vina_step import Vina
+from filterzyme.steps.extract_docking_metrics_step import DockingMetrics
+from filterzyme.steps.preparevina_step import PrepareVina
+from filterzyme.steps.preparechai_step import PrepareChai
+from filterzyme.steps.prepareboltz_step import PrepareBoltz
+from filterzyme.steps.superimposestructures_step import SuperimposeStructures
+from filterzyme.steps.computeproteinRMSD_step import ProteinRMSD
+from filterzyme.steps.computeligandRMSD_step import LigandRMSD
+from filterzyme.steps.geometric_filtering_cofactor_MCS import GeneralGeometricFiltering
+from filterzyme.steps.geometric_filtering_esterase import EsteraseGeometricFiltering
+from filterzyme.steps.fpocket_step import Fpocket
+from filterzyme.steps.ligandSASA_step import LigandSASA
+from filterzyme.steps.plip_step import PLIP
 
 from enzymetk.dock_chai_step import Chai
 from enzymetk.dock_boltz_step import Boltz
@@ -148,10 +148,10 @@ class Docking:
         delete_empty_subdirs(vina_dir)
 
         if self.metagenomic_enzymes == 1:
-            if self.alternative_strucuture_for_vina == 'Chai':
+            if self.alternative_structure_for_vina == 'Chai':
                 log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' )    
                 df_boltz['structure'] = df_boltz['chai_dir'].apply(generate_chai_structure_path)
-            elif self.alternative_strucuture_for_vina == 'Boltz':
+            elif self.alternative_structure_for_vina == 'Boltz':
                 log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' )    
                 df_boltz['structure'] = df_boltz['boltz_dir'].apply(generate_boltz_structure_path)
 
@@ -223,9 +223,9 @@ class Superimposition:
         df_prep = self._prepare_files_for_superimposition()
         df_sup = self._superimposition(df_prep)
         log_subsection('Calculating protein RMSDs')
-        df_proteinRMSD = self._proteinRMSD(df_sup)
+        df_proteinRMSD_all, df_proteinRMSD  = self._proteinRMSD(df_sup)
         log_subsection('Calculating ligand RMSDs')
-        df_ligandRMSD = self._ligandRMSD(df_proteinRMSD)
+        df_ligandRMSD_all, df_ligandRMSD = self._ligandRMSD(df_proteinRMSD)
         return df_ligandRMSD
 
 
@@ -253,18 +253,21 @@ class Superimposition:
         proteinRMSD_dir = Path(self.output_dir) / 'proteinRMSD'
         proteinRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir) / 'superimposed_structures'
-        df_proteinRMSD = df << (ProteinRMSD('Entry', input_dir = input_dir, output_dir = proteinRMSD_dir, visualize_heatmaps = True)  
-                            >> Save(Path(self.output_dir)/'proteinRMSD.pkl'))
-        return df_proteinRMSD
+        df_proteinRMSD_pairwise, df_proteinRMSD = df << (ProteinRMSD('Entry', input_dir = input_dir, output_dir = proteinRMSD_dir, visualize_heatmaps = True))
+        df_proteinRMSD_pairwise.to_pickle(Path(self.output_dir) / 'proteinRMSD_pairwise.pkl')
+        df_proteinRMSD.to_pickle(Path(self.output_dir)/ 'proteinRMSD.pkl')
+        return df_proteinRMSD_pairwise, df_proteinRMSD
 
     def _ligandRMSD(self, df): 
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
-        df_best_structures = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
-        df_best_structures_w_metrics = add_metrics_to_best_structures(df_best_structures, pd.read_pickle(Path(self.output_dir).parent / 'docking/dockingmetrics.pkl'))
-        df_best_structures_w_metrics.to_pickle(Path(self.output_dir) / 'best_structures.pkl')
-        return df_best_structures_w_metrics
+        df_ligandRMSD_pairwise, df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
+        df_ligandRMSD.to_pickle(Path(self.output_dir) / 'ligandRMSD_prior.pkl')
+        df_ligandRMSD_w_metrics = extract_docking_metrics(df_ligandRMSD)
+        df_ligandRMSD_w_metrics.to_pickle(Path(self.output_dir) / 'ligandRMSD.pkl')
+        df_ligandRMSD_pairwise.to_pickle(Path(self.output_dir)/ 'ligandRMSD_pairwise.pkl')
+        return df_ligandRMSD_pairwise, df_ligandRMSD_w_metrics
 
 
 class GeometricFilters:
@@ -375,12 +378,11 @@ class Pipeline:
         superimp.run()  
 
 
-
         # Geometric filtering for all structures
 
         # Geometric filtering for best structure only
         gf = GeometricFilters(
-            df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/best_structures.pkl'),
+            df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/ligandRMSD.pkl'),
             esterase=self.esterase,
             input_dir=Path(self.base_output_dir) / "superimposition",
             output_dir=Path(self.base_output_dir) / "geometricfiltering",

@@ -57,11 +57,9 @@ df = pd.read_pickle("example_df.pkl")
 
 pipeline = Pipeline(
         df = df,
-        ligand_name="TPP",
         max_matches=1000,                # number of matches during substructure SEARCH
         esterase=0,                      # 1 if interested specifically in esterases
-        find_closest_nuc=1,
-        num_threads=1,
+        num_threads=1,                   # number of threads
         skip_catalytic_residue_prediction = False,
         alternative_structure_for_vina = 'Chai', 
         squidly_dir='/nvme2/helen/EnzymeStructuralFiltering/filterzyme/squidly_final_models/',

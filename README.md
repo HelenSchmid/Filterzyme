@@ -1,4 +1,4 @@
-# EnzymeStructuralFiltering
+# Filterzyme
 
 Structural filtering pipeline using docking and active site heuristics to prioritze ML-predicted enzyme variants for experimental validation. 
 This tool processes superimposed ligand poses and filters them using geometric criteria such as distances, angles, and optionally, esterase-specific filters or nucleophilic proximity.
@@ -10,7 +10,6 @@ This tool processes superimposed ligand poses and filters them using geometric c
 - Analysis of enzyme-ligand docking using multiple docking tools (ML- and physics-based).
 - Optional esterase or nucleophile-focused analysis.
 - User-friendly pipeline only using a .pkl file as input and ligand smile strings.
-- Different parts of the pipeline can be run independently of each other. 
 
 ---
 

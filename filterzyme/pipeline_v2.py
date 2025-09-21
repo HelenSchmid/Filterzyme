@@ -6,7 +6,7 @@ import os
 
 from filterzyme.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path, generate_chai_structure_path
 from filterzyme.utils.helpers import clean_protein_sequence, delete_empty_subdirs, extract_docking_metrics, valid_file_list, add_metrics
-from filterzyme.steps.predict_catalyticsite_step import ActiveSitePred
+#from filterzyme.steps.predict_catalyticsite_step import ActiveSitePred
 from filterzyme.steps.save_step import Save
 from filterzyme.steps.dock_vina_step import Vina
 from filterzyme.steps.extract_docking_metrics_step import DockingMetrics
@@ -24,6 +24,8 @@ from filterzyme.steps.plip_step import PLIP
 
 from enzymetk.dock_chai_step import Chai
 from enzymetk.dock_boltz_step import Boltz
+from enzymetk.predict_catalyticsite_step import ActiveSitePred
+
 #from enzymetk.dock_vina_step import Vina
 
 logger = logging.getLogger(__name__)
@@ -76,13 +78,10 @@ class Docking:
             .rename(columns={'Entry': 'rep_entry'}))
         pred_in = reps.rename(columns={'rep_entry': 'Entry'})
         
-        df_cat_res = pred_in << ActiveSitePred('Entry', 'Sequence', self.squidly_dir, self.num_threads)
-        df_cat_res = df_cat_res.merge(reps, left_on='label', right_on='rep_entry', how='left')
-
-        df_squidly = self.df.merge(
-        df_cat_res[['Sequence', 'Squidly_CR_Position']].drop_duplicates('Sequence'),
-        on='Sequence', how='left' )
-
+        df_cat_res = pred_in << ActiveSitePred('Entry', 'Sequence')
+        residues = dict(zip(df_cat_res.id, df_cat_res.residues))
+        df_squidly = self.df.copy()
+        df_squidly['Squidly_CR_Position'] = [residues.get(e) for e in df_squidly['Entry'].values]
         # Remove entries without catalytic residues for proteins without user-specified residues for vina-docking
         if 'vina_residues' not in df_squidly.columns:
             df_squidly['vina_residues'] = None

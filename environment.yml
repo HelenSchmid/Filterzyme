@@ -19,7 +19,7 @@ dependencies:
   - pip
   - plip
   - pip:
-    - -e /disk1/ariane/vscode/enzyme-tk/
+    - enzymetk
     - filterzyme
     - rdkit
     - freesasa

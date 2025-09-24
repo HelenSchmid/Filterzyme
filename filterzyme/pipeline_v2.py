@@ -273,7 +273,10 @@ class GeometricFilters:
     def __init__(self,  df, esterase = 0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
         self.esterase = esterase
         self.num_threads = num_threads
-        self.df = df.copy()
+        if isinstance(df, str): # Allow passing of a string
+            self.df = pd.read_csv(df)
+        else:
+            self.df = df.copy()
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)

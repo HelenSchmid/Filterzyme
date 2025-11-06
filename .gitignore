@@ -5,6 +5,25 @@ __pycache__/
 *.pyc
 *.pyo
 
+# ---------------- data ignores
+*data
+*software
+*.pkl
+*.npz
+*.cif
+*.json
+*.cif 
+*.csv
+*.pdb 
+*.pt 
+*.png
+*.txt
+*.yaml
+*.log
+
+*filterzyme_output/
+
+
 # C extensions
 *.so
 

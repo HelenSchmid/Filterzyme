@@ -17,6 +17,7 @@ from filterzyme.pipeline_v2 import GeometricFilters
 
 
 df = pd.read_pickle('serine_hydrolases_input_df.pkl')
+df = df.head(1)
 base_output_dir = "filterzyme_output"
 
 if __name__ == "__main__":

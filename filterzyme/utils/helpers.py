@@ -59,6 +59,49 @@ def log_boxed_note(text):
     border = "-" * (len(text) + 8)
     logger.info(f"\n{border}\n|   {text}   |\n{border}\n")
 
+
+import time
+import psutil
+import logging
+from functools import wraps
+
+def log_usage(section_name: str, log_file: str = "filterzyme_usage.log"):
+    """
+    Measure wall time and memory usage of a function.
+    Logs results to both stdout and a file.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            logger = logging.getLogger(section_name)
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(logging.Formatter('%(message)s'))
+            logger.addHandler(file_handler)
+            logger.setLevel(logging.INFO)
+
+            process = psutil.Process()
+            start_time = time.time()
+            start_mem = process.memory_info().rss / (1024 * 1024)  # in MB
+
+            logger.info(f"\n--- START {section_name} ---")
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            end_mem = process.memory_info().rss / (1024 * 1024)
+
+            elapsed = end_time - start_time
+            mem_used = end_mem - start_mem
+
+            logger.info(f"{section_name} completed in {elapsed:.2f} seconds")
+            logger.info(f"Memory change: {mem_used:+.2f} MB")
+            logger.info(f"Current memory usage: {end_mem:.2f} MB")
+            logger.info(f"--- END {section_name} ---\n")
+
+            logger.removeHandler(file_handler)
+            file_handler.close()
+            return result
+        return wrapper
+    return decorator
+
 def generate_boltz_structure_path(input_path):
     """
     Generate the structure file path of Boltz structure based on boltz output directory.

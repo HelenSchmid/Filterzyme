@@ -3,9 +3,13 @@ from typing import Union
 import pandas as pd
 import logging
 import os
+import time
+import psutil
+from functools import wraps
 
 from filterzyme.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path, generate_chai_structure_path
 from filterzyme.utils.helpers import clean_protein_sequence, delete_empty_subdirs, extract_docking_metrics, valid_file_list, add_metrics
+from filterzyme.utils.helpers import log_usage
 #from filterzyme.steps.predict_catalyticsite_step import ActiveSitePred
 from filterzyme.steps.save_step import Save
 from filterzyme.steps.dock_vina_step import Vina
@@ -70,6 +74,7 @@ class Docking:
         df_vina = self._run_vina(df_boltz)
         df_metrics = self._extract_docking_quality_metrics(df_vina)
 
+    @log_usage("Predict catalytic residues")
     def _catalytic_residue_prediction(self):
         self.df['Sequence'] = self.df['Sequence'].apply(clean_protein_sequence)
 
@@ -119,6 +124,7 @@ class Docking:
         log_boxed_note("Finished predicting active site residues")
         return df_squidly
 
+    @log_usage("Running Chai docking")
     def _run_chai(self, df_squidly):
         log_subsection("Docking using Chai")
         chai_dir = Path(self.output_dir) / 'chai'
@@ -129,6 +135,7 @@ class Docking:
         df_chai.rename(columns = {'output_dir':'chai_dir'}, inplace=True)
         return df_chai
 
+    @log_usage("Running Boltz docking")
     def _run_boltz(self, df_chai):
         log_subsection("Docking using Boltz")
         boltz_dir = Path(self.output_dir) / 'boltz/'
@@ -140,6 +147,7 @@ class Docking:
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz
 
+    @log_usage("Running Vina docking")
     def _run_vina(self, df_boltz):
         log_subsection("Docking using Vina")
         vina_dir = Path(self.output_dir) / 'vina/'
@@ -198,7 +206,8 @@ class Docking:
   
         df_vina.to_pickle(Path(self.output_dir)/'vina.pkl') 
         return df_vina
-   
+    
+    @log_usage("Extract docking quality metrics")
     def _extract_docking_quality_metrics(self, df):
         log_subsection('Extracting docking quality metrics')
         df = df[df["vina_dir"].notna()].copy()
@@ -235,7 +244,8 @@ class Superimposition:
                 >> PrepareChai('chai_dir', preparedfiles_dir, 1)
                 >> PrepareBoltz('boltz_dir' , preparedfiles_dir, 1))
         return df_metrics
-
+    
+    @log_usage("Superimposing structures")
     def _superimposition(self,  df):                   
         output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
 
@@ -248,6 +258,7 @@ class Superimposition:
                 >> Save(Path(self.output_dir) / 'superimposedstructures.pkl'))
         return df_sup
     
+    @log_usage("Calculating protein RMSD")
     def _proteinRMSD(self, df):  
         proteinRMSD_dir = Path(self.output_dir) / 'proteinRMSD'
         proteinRMSD_dir.mkdir(exist_ok=True, parents=True) 
@@ -257,6 +268,7 @@ class Superimposition:
         df_proteinRMSD.to_pickle(Path(self.output_dir)/ 'proteinRMSD.pkl')
         return df_proteinRMSD_pairwise, df_proteinRMSD
 
+    @log_usage("Calculating ligand RMSD")
     def _ligandRMSD(self, df): 
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
@@ -300,6 +312,7 @@ class GeometricFilters:
         log_boxed_note('Pipeline finished!')
         return df_final
 
+    @log_usage("Geometric filtering")
     def _run_geometric_filtering(self):
         if self.esterase == 1: 
             df_geo_filter = self.df << (EsteraseGeometricFiltering(
@@ -313,6 +326,7 @@ class GeometricFilters:
                                     >> Save(Path(self.output_dir) / 'geometricfiltering.pkl'))
         return df_geo_filter
 
+    @log_usage("Calculating active site volume")
     def _active_site_volume(self, df):
         fpocket_dir = Path(self.output_dir) / 'ASVolume'
         fpocket_dir.mkdir(exist_ok=True, parents=True)
@@ -320,12 +334,14 @@ class GeometricFilters:
             >> Save(Path(self.output_dir) / 'ASvolume.pkl'))
         return df_ASVolume
 
+    @log_usage("Calculating ligand surface exposure")
     def _ligand_surface_exposure(self, df):
         ligandSASA_dir = Path(self.output_dir) / 'LigandSASA'
         df_ligandSASA = df << (LigandSASA(input_dir = Path(self.input_dir)/ 'preparedfiles_for_superimposition', output_dir = ligandSASA_dir)
                             >> Save(Path(self.output_dir) / 'ligandSASA.pkl'))
         return df_ligandSASA
     
+    @log_usage("Running PLIP for protein-ligand interactions")  
     def _plip_interactions(self, df):
         df_plip = df << (PLIP(input_dir = Path(self.input_dir) / 'preparedfiles_for_superimposition', output_dir = self.output_dir)
                         >> Save(Path(self.output_dir) / 'plip_interactions.pkl'))

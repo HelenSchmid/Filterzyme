@@ -8,7 +8,6 @@ __pycache__/
 # ---------------- data ignores
 *data
 *software
-*.pkl
 *.npz
 *.cif
 *.json

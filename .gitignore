@@ -23,6 +23,8 @@ __pycache__/
 
 *filterzyme_output/
 *fasta-36.3.8i/
+*protein_gibbs_sampler/
+*ProteinMPNN/
 
 
 # C extensions

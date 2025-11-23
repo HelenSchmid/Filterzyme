@@ -19,8 +19,10 @@ __pycache__/
 *.txt
 *.yaml
 *.log
+*.gz
 
 *filterzyme_output/
+*fasta-36.3.8i/
 
 
 # C extensions

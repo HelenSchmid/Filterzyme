@@ -43,20 +43,6 @@ def parse_vina_output(file_path):
     return docking_results
 
 
-def extract_docking_metrics_vina(vina_dir: Path, entry_name: str, ligand_name: str):
-    """
-    Extracts binding affinity from a Vina output .txt file named like <entry>-<ligand>.txt
-    """
-    txt_file = vina_dir / f"{entry_name}-{ligand_name}_log.txt"
-
-    if not txt_file.exists():
-        logger.warning(f"Vina output not found: {txt_file}")
-        return None
-
-    vina_dict = parse_vina_output(txt_file)
-    return vina_dict
-
-
 def extract_chai_metrics(npz_path):
     '''
     Extract chai metrics from npz files.
@@ -137,10 +123,7 @@ class DockingMetrics(Step):
             entry_name = row['Entry']
             ligand_name = row['substrate_name']
 
-            # ---Extract vina docking metrics---
-            vina_dir = Path(row['vina_dir']).parent
-            vina_metrics = extract_docking_metrics_vina(vina_dir, entry_name, ligand_name)
-            row_result = {'vina_affinities': vina_metrics if vina_metrics else {}}
+            row_result = {}
 
             # ---Exract chai docking metrics---
             chai_dir = Path(row['chai_dir']) / 'chai'

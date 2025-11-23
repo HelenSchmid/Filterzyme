@@ -432,15 +432,12 @@ class EsteraseGeometricFiltering(Step):
         for _, row in df.iterrows():
             entry_name = row['Entry']
             docked_structure_name = row['docked_structure'] # docked_structure
-            squidly_residues = str(row['Squidly_CR_Position'])
             substrate_smiles = row['substrate_smiles']
             substrate_moiety = row['substrate_moiety']
             row_result = {}
 
             default_result = {
-                'distance_ligand_to_squidly_residues': None,
                 'distance_ligand_to_closest_nuc': None,
-                'Bürgi–Dunitz_angle_to_squidly_residue': None,
                 'Bürgi–Dunitz_angle_to_closest_nucleophile': None
             }
 
@@ -455,9 +452,7 @@ class EsteraseGeometricFiltering(Step):
 
                 # Find coordinates of chemical moiety of interest of the ligand
                 ligand_coords = find_substructure_coordinates(extracted_ligand_atoms, substrate_moiety, atom_to_get_coords_idx=0) # carbonyl C and phosphate atom are both at index 0
-                # Get squidly protein atom coordinates
-                squidly_atom_coords = get_squidly_residue_atom_coords(pdb_file, squidly_residues)
-                filtered_squidly_atom_coords = filter_residue_atoms(squidly_atom_coords, atom_selection)
+
 
                 # Compute distances between squidly predicted residues and target chemical moiety
                 if not ligand_coords or not isinstance(ligand_coords, dict):
@@ -466,20 +461,6 @@ class EsteraseGeometricFiltering(Step):
                     results.append(row_result)
                     continue
 
-                if not squidly_atom_coords:
-                    logger.warning(f"No squidly residues found in {entry_name}.")
-                    row_result.update(default_result)
-                    results.append(row_result)
-                    continue
-
-                # --- Find distance between squidly residues and ligand
-                squidly_distance = find_min_distance_per_squidly(ligand_coords, filtered_squidly_atom_coords)
-
-                # store distances in a dictionary
-                if squidly_distance:
-                    squidly_dist_dict = {res_name: match_info['distance'] for res_name, match_info in squidly_distance.items()}
-                    row_result['distance_ligand_to_squidly_residues'] = squidly_dist_dict
-
                 # --- Find closest nucleophile overall
                 all_nucleophiles_coords = get_all_nucs_atom_coords(pdb_file) # Get all nucleophilic residues atom coordinates
                 closest_distance = find_min_distance(ligand_coords, all_nucleophiles_coords) # Compute smallest distances between all nucleophilic residues and ligand
@@ -487,53 +468,6 @@ class EsteraseGeometricFiltering(Step):
                 if closest_distance:
                     closest_nuc_dict = {closest_distance['nuc_res']: closest_distance['distance']}
                     row_result['distance_ligand_to_closest_nuc'] = closest_nuc_dict
-
-                
-                # --- Calculate Bürgi–Dunitz angle between closest nucleophile and ester bond
-                try: 
-                    oxygen_atom_coords = find_substructure_coordinates(extracted_ligand_atoms, substrate_moiety, atom_to_get_coords_idx=0) # atom1 from SMARTS match (e.g., double bonded O)
-                    
-                    # Angle between nucleophilic squidly residues and ester bond
-                    nuc_squidly_atom_coords = filter_nucleophilic_residues(filtered_squidly_atom_coords)
-
-                    bd_angles_to_squidly = {}
-
-                    for res_name, atoms in nuc_squidly_atom_coords.items():
-                        if not atoms:
-                            continue
-
-                        nuc_atom_coords = np.array(atoms[0]['coords'])
-                        ligand_coords_list = list(ligand_coords.values())[0]
-                        oxygen_coords_list = list(oxygen_atom_coords.values())[0]
-
-                        if not ligand_coords_list or not oxygen_coords_list:
-                            continue
-
-                        ligand_c_coords = np.array(ligand_coords_list[0]['coords'])
-                        oxygen_coords = np.array(oxygen_coords_list[0]['coords'])
-
-                        angle = calculate_burgi_dunitz_angle(nuc_atom_coords, ligand_c_coords, oxygen_coords)
-
-                        # Store angle in dictionary
-                        bd_angles_to_squidly[res_name] = angle
-
-                    if bd_angles_to_squidly:
-                        row_result['Bürgi–Dunitz_angles_to_squidly_residues'] = bd_angles_to_squidly
-
-                    # Single angle to closest nucleophile as dictionary
-                    if closest_distance:
-                        closest_angle_info = {
-                            closest_distance['nuc_res']: calculate_burgi_dunitz_angle(
-                                np.array(closest_distance['nuc_coords']),
-                                ligand_c_coords,
-                                oxygen_coords
-                            )
-                        }
-                        row_result['Bürgi–Dunitz_angle_to_closest_nucleophile'] = closest_angle_info
-                        
-                except Exception as e:
-                    logger.error(f"Error processing {entry_name}: {e}")
-                    row_result.update(default_result)
                              
             except Exception as e:
                 logger.error(f"Error processing {entry_name}: {e}")

@@ -39,6 +39,13 @@ logging.basicConfig(
     format='%(message)s'
 )
 
+"""
+In this version of the pipline, we omit vina docking for de novo designed enzymes because squidly cannot reliably predict the catalytic residues. 
+Instead, we focus on docking using Chai and Boltz only for such enzymes. And as catalytic residues we either take user-defined ones or the closest predicted nucleophile. 
+"""
+
+
+
 class Docking:
     def __init__(
         self,
@@ -71,8 +78,7 @@ class Docking:
         log_section("Protein-Ligand docking")
         df_chai = self._run_chai(df_squidly)
         df_boltz= self._run_boltz(df_chai)
-        df_vina = self._run_vina(df_boltz)
-        df_metrics = self._extract_docking_quality_metrics(df_vina)
+        df_metrics = self._extract_docking_quality_metrics(df_boltz)
 
     @log_usage("Predict catalytic residues")
     def _catalytic_residue_prediction(self):
@@ -147,70 +153,11 @@ class Docking:
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz
 
-    @log_usage("Running Vina docking")
-    def _run_vina(self, df_boltz):
-        log_subsection("Docking using Vina")
-        vina_dir = Path(self.output_dir) / 'vina/'
-        vina_dir.mkdir(exist_ok=True, parents=True)
-        delete_empty_subdirs(vina_dir)
 
-        if self.metagenomic_enzymes == 1:
-            if self.alternative_structure_for_vina == 'Chai':
-                log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' )    
-                df_boltz['structure'] = df_boltz['chai_dir'].apply(generate_chai_structure_path)
-            elif self.alternative_structure_for_vina == 'Boltz':
-                log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' )    
-                df_boltz['structure'] = df_boltz['boltz_dir'].apply(generate_boltz_structure_path)
-
-        else: 
-            df_boltz['structure'] = None # or path to AF structure
-        
-        # Initial Vina docking attempt
-        df_vina = df_boltz << (Vina('Entry', 'structure', 'Sequence', 'substrate_smiles', 'substrate_name', 'catalytic_residues', vina_dir, self.num_threads))
-        df_vina.rename(columns = {'output_dir':'vina_dir'}, inplace=True)
-
-        # Handle missing AF2 structures
-        if df_vina['vina_dir'].isnull().any() == True: 
-            missing_entries  = df_vina[df_vina['vina_dir'].isnull()]['Entry'].unique()
-            delete_empty_subdirs(vina_dir)    
-
-            # Prepare missing entries with Chai structure
-            if self.alternative_structure_for_vina == 'Chai':
-                log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.' + f'Entries: {list(missing_entries)}')    
-                df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
-                df_missing['structure'] = df_missing['chai_dir'].apply(generate_chai_structure_path)  
-                print(df_missing.structure)              
-
-
-            # Prepare missing entries with Boltz structure
-            elif self.alternative_structure_for_vina == 'Boltz':
-                log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.' + f'Entries: {list(missing_entries)}')    
-                df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
-                df_missing['structure'] = df_missing['boltz_dir'].apply(generate_boltz_structure_path)
-
-            df_missing_docked = df_missing << (Vina('Entry', 'structure', 'Sequence', 'substrate_smiles', 'substrate_name', 'catalytic_residues', vina_dir, self.num_threads))
-            df_missing_docked.rename(columns = {'output_dir':'vina_dir_missing'}, inplace=True)
-
-            # Merge both docking attempts
-            df_vina_combined = pd.merge(
-                df_vina, df_missing_docked[['Entry', 'vina_dir_missing']], on='Entry', how='left'
-            )
-
-            # Choose first attempt if available, otherwise fallback
-            df_vina_combined['vina_dir'] = df_vina_combined.apply(
-                lambda row: row['vina_dir'] if pd.notnull(row['vina_dir']) else row['vina_dir_missing'],
-                axis=1
-            )
-            df_vina_combined.drop(columns=['vina_dir_missing'], inplace=True)
-            df_vina = df_vina_combined.copy()
-  
-        df_vina.to_pickle(Path(self.output_dir)/'vina.pkl') 
-        return df_vina
-    
     @log_usage("Extract docking quality metrics")
     def _extract_docking_quality_metrics(self, df):
         log_subsection('Extracting docking quality metrics')
-        df = df[df["vina_dir"].notna()].copy()
+        df = df[df["boltz_dir"].notna()].copy()
         df_metrics = df << (DockingMetrics(input_dir = Path(self.output_dir), output_dir = Path(self.output_dir)) 
                         >> Save(Path(self.output_dir) / 'dockingmetrics.pkl'))
         return df_metrics
@@ -240,8 +187,7 @@ class Superimposition:
     def _prepare_files_for_superimposition(self):
         df_metrics = pd.read_pickle(Path(self.input_dir) / 'dockingmetrics.pkl')
         preparedfiles_dir = Path(self.output_dir) / 'preparedfiles_for_superimposition/'
-        df_metrics << (PrepareVina('vina_dir', 'substrate_name',  preparedfiles_dir)
-                >> PrepareChai('chai_dir', preparedfiles_dir, 1)
+        df_metrics << (PrepareChai('chai_dir', preparedfiles_dir, 1)
                 >> PrepareBoltz('boltz_dir' , preparedfiles_dir, 1))
         return df_metrics
     
@@ -249,12 +195,9 @@ class Superimposition:
     def _superimposition(self,  df):                   
         output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
 
-        df = df[df['vina_files_for_superimposition'].apply(valid_file_list)]
         df = df[df['chai_files_for_superimposition'].apply(valid_file_list)]
 
-        df_sup = df << (SuperimposeStructures('vina_files_for_superimposition',  'chai_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='chai', num_threads = self.num_threads) 
-                >> SuperimposeStructures('vina_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='vina', name2='boltz', num_threads = self.num_threads) 
-                >> SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='chai', name2='boltz', num_threads = self.num_threads)
+        df_sup = df << (SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='chai', name2='boltz', num_threads = self.num_threads)
                 >> Save(Path(self.output_dir) / 'superimposedstructures.pkl'))
         return df_sup
     

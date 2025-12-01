@@ -1,0 +1,55 @@
+nohup: ignoring input
+/home/helen/miniconda3/envs/promiscuity/lib/python3.12/site-packages/pandera/_pandas_deprecated.py:157: FutureWarning: Importing pandas-specific classes and functions from the
+top-level pandera module will be **removed in a future version of pandera**.
+If you're using pandera to validate pandas objects, we highly recommend updating
+your import:
+
+```
+# old import
+import pandera as pa
+
+# new import
+import pandera.pandas as pa
+```
+
+If you're using pandera to validate objects from other compatible libraries
+like pyspark or polars, see the supported libraries section of the documentation
+for more information on how to import pandera:
+
+https://pandera.readthedocs.io/en/stable/supported_libraries.html
+
+To disable this warning, set the environment variable:
+
+```
+export DISABLE_PANDERA_IMPORT_WARNING=True
+```
+
+  warnings.warn(_future_warning, FutureWarning)
+
+############################################################
+###        SKIPPING CATALYTIC RESIDUE PREDICTION         ###
+############################################################
+
+
+############################################################
+###                PROTEIN-LIGAND DOCKING                ###
+############################################################
+
+
+--- START Running Chai docking ---
+
+############################################################
+###                  Docking using Chai                  ###
+############################################################
+
+[fasta] [filterzyme_output_yang_benchmark/docking/chai/2_A0A2T9YC16_CuSOD/2_A0A2T9YC16_CuSOD.fasta] protein|2_A0A2T9YC16_CuSOD 498
+[fasta] [filterzyme_output_yang_benchmark/docking/chai/2_A0A2T9YC16_CuSOD/2_A0A2T9YC16_CuSOD.fasta] ligand|2_A0A2T9YC16_CuSOD-substrate-0 7
+Generating ref conformer for LIG, [O-][O]
+/nvme2/helen/EnzymeStructuralFiltering/filterzyme/__init__.py
+1_IADY01026081p1pp1_CuSOD ATGTCTCTTCTGTTACTGTCATTATTGCTCCTGCTCCTGTGGACGAATAAACATCTGGCCCATTCCATTGAATCGAATGTAGCCTCGGGTAACGGCATGGAATCTGGCGGGGGCTCAACTATGGGTACAGTGAAAGCCGTAGCAGTTATTAGCGGCGCAGATAACGTTAAAGGTTTCGTGCAGTTTATTCAGCAGCCAGCCGGAGGTACACACGTTAAAGGCCGTATTTCTGGACTGTCTCCTGGGCTGCACGGTTTTCACATTCACGCATTGGGTGATACAACCAACGGTTGCAACTCTACCGGACCCCATTTTAATCCGTTGAAAAAGGATCATGGGAGCCCGCTGGATGACGAACGTCATGCAGGCGATTTAGGAAATATTGTCGCTGGCAGCGACGGAGTCGCTGAAATTTCAATTACTGACAAACAAATCCCACTGAGCGGTCAACATTCGATACTCGGGAGAGCCGTCGTTGTGCATGCAGATCCAGATGATCTGGGCAAAGGGGGGCATGAGCTCTCGAAAACTACCGGTAATGCGGGCGCGCGCGTGGGATGCGGTATTATCGGGCTGCAATCGTCTGTAGCGGCCGCACTCGAGCACCACCACCACCACCACTGA [O-][O]
+[O-][O]
+Output directory exists: filterzyme_output_yang_benchmark/docking/chai/1_IADY01026081p1pp1_CuSOD
+2_A0A2T9YC16_CuSOD ATGGCCAAGGCCGTTTGTGTGCTTCGGGGCGATCAGGGAGTAACAGGCGTTGTCACCTTCGAACAGGCAGCTCCGGACTCTCCCACAACAATTAGTGCTGAGTTTAATGGTCTGTCGAAGGGCAACCACGGTTTTCATATCCATGAGTTCGGTGATAATACGAATGGTTGCATCTCGGCCGGTGGACATTTTAATCCTCATAACGTTAACCATGGCGACCGTACAGCCAGTGTTAGACATGTTGGTGACATGGGGAATGTAGTAAGTTCTGGGGCGGACAAGCCCACCACGGTAAACTTAGAGGATCGCATGATCTCTCTGTTTGGTCCGACGTCCATTATCGGCAGAACGGTTGTAGTACATGGCGGCGCTGATGACCTTGGTCTTGGCGGTGATGCGGGGAGTCTTCTGAATGGGAATGCCGGATCCCGCGCCGCGTGTGGTGTGATTGGAATTACCAATGCGGCCGCACTCGAGCACCACCACCACCACCACTGA [O-][O]
+[O-][O]
+filterzyme_output_yang_benchmark/docking/chai/2_A0A2T9YC16_CuSOD
+Trunk sample 1/1

@@ -216,6 +216,18 @@ class Superimposition:
         ligandRMSD_dir = Path(self.output_dir) / 'ligandRMSD'
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
+
+        # Check for required columns
+        print("DEBUG: 'best_structure' in df:", 'best_structure' in df.columns)
+        print("DEBUG: Unique Entry values:", df['Entry'].unique())
+        
+        # Check superimposed structure files exist for failing entry
+        failing_entry = '83911b_MDH'
+        sup_dir = Path(self.output_dir) / 'superimposed_structures' / failing_entry
+        print(f"DEBUG: Superimposed files for {failing_entry} exist:", sup_dir.exists())
+        if sup_dir.exists():
+            print(f"DEBUG: Files in {sup_dir}:", list(sup_dir.glob('*')))
+
         df_ligandRMSD_pairwise, df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
         df_ligandRMSD.to_pickle(Path(self.output_dir) / 'ligandRMSD_prior.pkl')
         df_ligandRMSD_w_metrics = extract_docking_metrics(df_ligandRMSD)

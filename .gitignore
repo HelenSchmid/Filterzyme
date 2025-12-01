@@ -22,6 +22,8 @@ __pycache__/
 *.gz
 
 *filterzyme_output/
+*filterzyme_output_yang_benchmark/
+*filterzyme_output_test/
 *fasta-36.3.8i/
 *protein_gibbs_sampler/
 *ProteinMPNN/

@@ -448,7 +448,6 @@ class GeneralGeometricFiltering(Step):
         for _, row in df.iterrows():
             entry_name = row['Entry']
             docked_structure_name = row['docked_structure']
-            catalytic_residues = str(row['catalytic_residues'])
             substrate_smiles = row['substrate_smiles']
             cofactor_smiles = row['cofactor_smiles']
             substrate_moiety = row['substrate_moiety']
@@ -458,8 +457,6 @@ class GeneralGeometricFiltering(Step):
 
             default_result = {
                 'distance_ligand_to_cofactor': None, 
-                'distance_ligand_to_catalytic_residues': None,
-                'distance_cofactor_to_catalytic_residues': None, 
                 'distance_ligand_to_closest_nuc': None,
                 'ligand_moiety_method': None, 
                 'cofactor_moiety_method': None
@@ -524,31 +521,31 @@ class GeneralGeometricFiltering(Step):
 
                 # --- Distance between catalytic residues and ligand ---
 
-                # Get squidly protein atom coordinates
-                squidly_atom_coords = get_squidly_residue_atom_coords(pdb_file, catalytic_residues)
-                filtered_squidly_atom_coords = filter_residue_atoms(squidly_atom_coords, atom_selection)
+                # # Get squidly protein atom coordinates
+                # squidly_atom_coords = get_squidly_residue_atom_coords(pdb_file, catalytic_residues)
+                # filtered_squidly_atom_coords = filter_residue_atoms(squidly_atom_coords, atom_selection)
 
-                if not squidly_atom_coords:
-                    logger.warning(f"No squidly residues found in {entry_name}.")
-                    row_result.update(default_result)
-                    results.append(row_result)
-                    continue
+                # if not squidly_atom_coords:
+                #     logger.warning(f"No squidly residues found in {entry_name}.")
+                #     row_result.update(default_result)
+                #     results.append(row_result)
+                #     continue
 
-                # Compute distances between squidly predicted residues and ligand moiety
-                squidly_distance = find_min_distance_per_squidly(ligand_centroid, filtered_squidly_atom_coords)
+                # # Compute distances between squidly predicted residues and ligand moiety
+                # squidly_distance = find_min_distance_per_squidly(ligand_centroid, filtered_squidly_atom_coords)
 
-                # store distances in a dictionary
-                if squidly_distance:
-                    squidly_dist_dict = {res_name: match_info['distance'] for res_name, match_info in squidly_distance.items()}
-                    row_result['distance_ligand_to_catalytic_residues'] = squidly_dist_dict
+                # # store distances in a dictionary
+                # if squidly_distance:
+                #     squidly_dist_dict = {res_name: match_info['distance'] for res_name, match_info in squidly_distance.items()}
+                #     row_result['distance_ligand_to_catalytic_residues'] = squidly_dist_dict
 
 
-                # ---Distance between sequidly predicted residues and cofactor moiety
-                squidly_distance = find_min_distance_per_squidly(cofactor_centroid, filtered_squidly_atom_coords)
-                # store distances in a dictionary
-                if squidly_distance:
-                    squidly_dist_dict = {res_name: match_info['distance'] for res_name, match_info in squidly_distance.items()}
-                    row_result['distance_cofactor_to_catalytic_residues'] = squidly_dist_dict
+                # # ---Distance between sequidly predicted residues and cofactor moiety
+                # squidly_distance = find_min_distance_per_squidly(cofactor_centroid, filtered_squidly_atom_coords)
+                # # store distances in a dictionary
+                # if squidly_distance:
+                #     squidly_dist_dict = {res_name: match_info['distance'] for res_name, match_info in squidly_distance.items()}
+                #     row_result['distance_cofactor_to_catalytic_residues'] = squidly_dist_dict
 
 
                 # --- Find closest nucleophile overall

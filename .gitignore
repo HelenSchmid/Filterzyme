@@ -6,6 +6,7 @@ __pycache__/
 *.pyo
 
 # ---------------- data ignores
+*fasta
 *data
 *software
 *.npz
@@ -27,6 +28,7 @@ __pycache__/
 *fasta-36.3.8i/
 *protein_gibbs_sampler/
 *ProteinMPNN/
+benchmarking/serine_hydrolases/protein_metrics
 
 
 # C extensions

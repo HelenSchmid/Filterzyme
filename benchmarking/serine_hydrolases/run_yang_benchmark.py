@@ -15,7 +15,7 @@ from filterzyme.pipeline_v2 import Docking
 from filterzyme.pipeline_v2 import Superimposition
 from filterzyme.pipeline_v2 import GeometricFilters
 
-df = pd.read_pickle('MDH_CuSOD_round3_input_df.pkl')
+df = pd.read_pickle('MDH_CuSOD_combined_input_df.pkl')
 
 base_output_dir = "filterzyme_output_yang_benchmark"
 

@@ -29,6 +29,8 @@ __pycache__/
 *protein_gibbs_sampler/
 *ProteinMPNN/
 benchmarking/serine_hydrolases/protein_metrics
+mmseqs/
+mmseqs/*
 
 
 # C extensions

@@ -411,6 +411,10 @@ class LigandRMSD(Step):
                     print('More than 2 ligands were found matching the smile string.')
                     continue
 
+                if len(filtered_ligands) == 0:
+                    logger.warning(f"No valid ligands found for entry {sub_dir.name}. Skipping.")
+                    continue
+
                 ligand1 = filtered_ligands[0]
                 ligand2 = filtered_ligands[1]
 

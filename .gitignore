@@ -21,6 +21,7 @@ __pycache__/
 *.yaml
 *.log
 *.gz
+*.pth
 
 *filterzyme_output/
 *filterzyme_output_yang_benchmark/

@@ -32,6 +32,8 @@ __pycache__/
 benchmarking/serine_hydrolases/protein_metrics
 mmseqs/
 mmseqs/*
+MicrosoftEnzymes/
+fasta-36.3.8i/
 
 
 # C extensions

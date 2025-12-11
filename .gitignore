@@ -34,7 +34,7 @@ mmseqs/
 mmseqs/*
 MicrosoftEnzymes/
 fasta-36.3.8i/
-
+*MicrosoftEnzymes/
 
 # C extensions
 *.so

@@ -34,6 +34,8 @@ mmseqs/
 mmseqs/*
 MicrosoftEnzymes/
 fasta-36.3.8i/
+PLACER/
+placer_output/
 
 # C extensions
 *.so

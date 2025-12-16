@@ -6,8 +6,7 @@ channels:
   - pytorch
   - bioconda
 dependencies:
-  - python==3.11.8
-  - pytorch::faiss-gpu
+  - python
   - pyarrow
   - pdbfixer
   - foldseek
@@ -18,10 +17,10 @@ dependencies:
   - fpocket
   - pip
   - plip
-  - pip:
-    - enzymetk
-    - filterzyme
-    - rdkit
-    - freesasa
-    - docko
-    - chai_lab
+  # - pip:
+  #   - enzymetk
+  #   - filterzyme
+  #   - rdkit
+  #   - freesasa
+  #   - docko
+  #   - chai_lab

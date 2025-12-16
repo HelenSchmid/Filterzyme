@@ -6,7 +6,7 @@ import sys
 import argparse
 from pathlib import Path 
 
-sys.path.insert(0, '/nvme2/helen/EnzymeStructuralFiltering/')
+sys.path.insert(0, '/mnt/nfs/vol8t/home/amora/code/Filterzyme/')
 import filterzyme
 print(filterzyme.__file__)  
 

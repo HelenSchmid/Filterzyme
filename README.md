@@ -26,18 +26,14 @@ conda activate filterpipeline
 ```bash
 git clone https://github.com/HelenSchmid/Filterzyme.git
 cd EnzymeStructuralFiltering
-pip install .
-```
-
-###  Install via pip
-```bash
-pip install filterzyme
+python setup.py sdist bdist_wheel
+pip install dist/filterzyme-0.0.6.tar.gz --use-deprecated=legacy-resolver
 ```
 
 ## Usage Example
 
 The input pandas **DataFrame** must include:  
-- `Entry` – unique identifier for each enzyme  
+- `Entry` – unique identifier for each enzyme and substrate pair
 - `Sequence` – amino acid sequence of the enzyme
 - `substrate_name` – name of the substrate
 - `substrate_smiles` – SMILES string of substrate e.g. MEHP "CCCCC(CC)COC(=O)C1=CC=CC=C1C(=O)O"

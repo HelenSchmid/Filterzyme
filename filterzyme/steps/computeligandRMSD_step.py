@@ -483,72 +483,76 @@ class LigandRMSD(Step):
             visualize_rmsd_by_entry(rmsd_df, output_dir=Path(self.output_dir))
 
         # Select the best docked structures based on RMSD
-        best_docked_structure_df = select_best_docked_structures(rmsd_df)
+        try:
+            best_docked_structure_df = select_best_docked_structures(rmsd_df)
 
-        # Merge metadata into pairwise df (keep pairwise as left table)
-        rmsd_df = rmsd_df.merge(df, on='Entry', how='left')
+            # Merge metadata into pairwise df (keep pairwise as left table)
+            rmsd_df = rmsd_df.merge(df, on='Entry', how='left')
 
-        # Map each structure to the methods it was picked by
-        best_map = (
-            best_docked_structure_df
-            .groupby(['Entry', 'best_structure'])['method']
-            .apply(lambda x: ','.join(sorted(set(x))))
-            .reset_index()
-            .rename(columns={'best_structure': 'docked_structure', 'method': 'best_method'})
-        )
-        #print(best_map)
-        # Per-structure single-row DataFrame
-        per_entry_structures = pd.concat([
-            rmsd_df[['Entry', 'docked_structure1']].rename(columns={'docked_structure1': 'docked_structure'}),
-            rmsd_df[['Entry', 'docked_structure2']].rename(columns={'docked_structure2': 'docked_structure'})
-        ], ignore_index=True).dropna(subset=['docked_structure']).drop_duplicates()
+            # Map each structure to the methods it was picked by
+            best_map = (
+                best_docked_structure_df
+                .groupby(['Entry', 'best_structure'])['method']
+                .apply(lambda x: ','.join(sorted(set(x))))
+                .reset_index()
+                .rename(columns={'best_structure': 'docked_structure', 'method': 'best_method'})
+            )
+            #print(best_map)
+            # Per-structure single-row DataFrame
+            per_entry_structures = pd.concat([
+                rmsd_df[['Entry', 'docked_structure1']].rename(columns={'docked_structure1': 'docked_structure'}),
+                rmsd_df[['Entry', 'docked_structure2']].rename(columns={'docked_structure2': 'docked_structure'})
+            ], ignore_index=True).dropna(subset=['docked_structure']).drop_duplicates()
 
-        # Get tool for each structure
-        per_entry_structures['tool'] = per_entry_structures['docked_structure'].apply(get_tool_from_structure_name)
+            # Get tool for each structure
+            per_entry_structures['tool'] = per_entry_structures['docked_structure'].apply(get_tool_from_structure_name)
 
-        # Merge stats per entry
-        structures_df = per_entry_structures.merge(df, on='Entry', how='left', suffixes=('_drop', ''))
-        # Drop the duplicates from per_entry_structures
-        drop_cols = [c for c in structures_df.columns if c.endswith('_drop')]
-        structures_df = structures_df.drop(columns=drop_cols)
+            # Merge stats per entry
+            structures_df = per_entry_structures.merge(df, on='Entry', how='left', suffixes=('_drop', ''))
+            # Drop the duplicates from per_entry_structures
+            drop_cols = [c for c in structures_df.columns if c.endswith('_drop')]
+            structures_df = structures_df.drop(columns=drop_cols)
 
-        # Attach which selection methods (if any) chose this structure
-        structures_df = structures_df.merge(
-            best_map, on=['Entry', 'docked_structure'], how='left', validate='many_to_one'
-        )
+            # Attach which selection methods (if any) chose this structure
+            structures_df = structures_df.merge(
+                best_map, on=['Entry', 'docked_structure'], how='left', validate='many_to_one'
+            )
 
-        # Flag sturctures deemed "best"
-        structures_df['is_best'] = structures_df['best_method'].notna()
-                
-        # aggregate to one row per (Entry, docked_structure)
-        key_cols = ['Entry', 'docked_structure']
-        agg_cols = [c for c in structures_df.columns if c not in key_cols]
+            # Flag sturctures deemed "best"
+            structures_df['is_best'] = structures_df['best_method'].notna()
+                    
+            # aggregate to one row per (Entry, docked_structure)
+            key_cols = ['Entry', 'docked_structure']
+            agg_cols = [c for c in structures_df.columns if c not in key_cols]
 
-        agg = {c: 'first' for c in agg_cols}  # default: take first value
-        if 'best_method' in structures_df.columns:
-            agg['best_method'] = lambda s: ','.join(sorted(set(s.dropna())))
+            agg = {c: 'first' for c in agg_cols}  # default: take first value
+            if 'best_method' in structures_df.columns:
+                agg['best_method'] = lambda s: ','.join(sorted(set(s.dropna())))
 
-        structures_df = (
-            structures_df
-            .groupby(key_cols, as_index=False)
-            .agg(agg)
-            .reset_index(drop=True)
-        )
+            structures_df = (
+                structures_df
+                .groupby(key_cols, as_index=False)
+                .agg(agg)
+                .reset_index(drop=True)
+            )
 
-        # Determine if it's first structure generated by tool
-        structures_df['is_first'] = structures_df['docked_structure'].apply(
-            lambda s: s.split('_')[-2] == '0')
-        
+            # Determine if it's first structure generated by tool
+            structures_df['is_first'] = structures_df['docked_structure'].apply(
+                lambda s: s.split('_')[-2] == '0')
+            
 
-        # collect all *_mean_ligandRMSD / *_std_ligandRMSD columns that actually exist
-        stat_cols_found = [c for c in rmsd_df.columns if re.search(r'_(mean|std)_ligandRMSD$', c)]
-        overall_cols = [c for c in ["overall_ligandRMSD_mean", "overall_ligandRMSD_std"] if c in rmsd_df.columns]
+            # collect all *_mean_ligandRMSD / *_std_ligandRMSD columns that actually exist
+            stat_cols_found = [c for c in rmsd_df.columns if re.search(r'_(mean|std)_ligandRMSD$', c)]
+            overall_cols = [c for c in ["overall_ligandRMSD_mean", "overall_ligandRMSD_std"] if c in rmsd_df.columns]
 
-        if stat_cols_found or overall_cols:
-            entry_stats = rmsd_df[["Entry"] + stat_cols_found + overall_cols].drop_duplicates("Entry")
-            structures_df = structures_df.merge(entry_stats, on="Entry", how="left")
-        
-        return rmsd_df, structures_df    
+            if stat_cols_found or overall_cols:
+                entry_stats = rmsd_df[["Entry"] + stat_cols_found + overall_cols].drop_duplicates("Entry")
+                structures_df = structures_df.merge(entry_stats, on="Entry", how="left")
+            
+            return rmsd_df, structures_df    
+        except Exception as e:
+            print(f"Error selecting best docked structures: {e}")
+            return rmsd_df, pd.DataFrame()  # Return empty DataFrame on error
 
 
     def execute(self, df) -> pd.DataFrame:

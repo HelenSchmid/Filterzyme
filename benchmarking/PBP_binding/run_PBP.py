@@ -17,6 +17,8 @@ from filterzyme.pipeline_v2 import GeometricFilters
 
 
 df = pd.read_csv('PBP_data_formatted.csv')
+# Just look at nicotine
+df = df[df['substrate_name'] == 'Nicotine']
 
 base_output_dir = "filterzyme_output"
 
@@ -26,7 +28,7 @@ if __name__ == "__main__":
     pipeline = Pipeline(
         df = df,
         max_matches=1000,
-        esterase = 1,
+        esterase = 0,
         num_threads=1,
         metagenomic_enzymes=0,
         skip_catalytic_residue_prediction = True, 

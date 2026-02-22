@@ -46,7 +46,7 @@ setup(name='filterzyme',
               'filterzyme = filterzyme.__main__:main'
           ]
       },
-      install_requires=['pandas', 'numpy', 'tqdm', 'biopython', 'biotite', 'matplotlib', 'seaborn', 'rdkit', 'freesasa', 'plip', 'enzymetk', 'docko'],
+      install_requires=['pandas', 'numpy', 'tqdm', 'biopython', 'biotite', 'matplotlib', 'seaborn', 'rdkit', 'freesasa', 'enzymetk', 'docko', 'cuequivariance_torch'],
       ppython_requires=">=3.10",
       data_files=[("", ["LICENSE"])]
       )

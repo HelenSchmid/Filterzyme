@@ -17,18 +17,39 @@ This tool processes superimposed ligand poses and filters them using geometric c
 
 ## Environment Setup
 ### Using conda
+
+Go onto a node with GPU access.
+
 ```bash
-conda env create -f environment.yml
-conda activate filterpipeline
+module load miniforge/25.9.1
+eval "$(conda shell.bash hook)"
+conda create --name filterzyme python=3.12 pip -y
+conda activate filterzyme
 ```
 
 ### Clone the repository
 ```bash
-git clone https://github.com/HelenSchmid/Filterzyme.git
+git clone https://github.com/MoraGroup/Filterzyme.git
 cd EnzymeStructuralFiltering
 python setup.py sdist bdist_wheel
 pip install dist/filterzyme-0.0.6.tar.gz --use-deprecated=legacy-resolver
+pip install enzymetk==0.0.8
 ```
+
+If you have issues with openbabel try running the below code (needed to get working on AITHYRA cluster)
+```
+conda install -c conda-forge openbabel swig -y
+conda install -c conda-forge plip -y
+export PYTHONPATH=$CONDA_PREFIX/lib/python3.12/site-packages:$PYTHONPATH
+conda install -y "numpy<2.0" "pandas<3.0" "openbabel" "plip"
+conda install -y "rdkit<=2023.09.6"
+```
+
+## Download cache to the installed directory using
+
+```boltz predict <input file> --cache $CONDA_PREFIX/lib/python3.12/site-packages/boltz/````
+
+Then you need to pass this to the 
 
 ## Usage Example
 

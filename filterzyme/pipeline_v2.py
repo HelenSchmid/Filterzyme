@@ -148,7 +148,8 @@ class Docking:
         boltz_dir.mkdir(exist_ok=True, parents=True)
         if 'cofactor_smiles' not in df_chai.columns:
             df_chai['cofactor_smiles'] = None
-        df_boltz = df_chai << (Boltz('Entry', 'Sequence', 'substrate_smiles', 'cofactor_smiles', boltz_dir, self.num_threads) 
+            # ToDo make path modular!!!
+        df_boltz = df_chai << (Boltz('Entry', 'Sequence', 'substrate_smiles', 'cofactor_smiles', boltz_dir, self.num_threads, args=['--cache', '$CONDA_PREFIX/lib/python3.12/site-packages/boltz/'])
                             >> Save(Path(self.output_dir)/'boltz.pkl'))
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz
@@ -239,6 +240,7 @@ class Superimposition:
 class GeometricFilters:
     def __init__(self,  df, esterase = 0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
         self.esterase = esterase
+        self.df = df
         self.num_threads = num_threads
         if isinstance(df, str): # Allow passing of a string
             self.df = pd.read_csv(df)

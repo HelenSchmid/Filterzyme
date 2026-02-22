@@ -1,4 +1,4 @@
-name: filterpipeline
+name: filterpipeline2
 channels:
   - conda-forge
   - https://repo.anaconda.com/pkgs/main
@@ -6,7 +6,7 @@ channels:
   - pytorch
   - bioconda
 dependencies:
-  - python
+  - python=3.11
   - pyarrow
   - pdbfixer
   - foldseek
@@ -24,3 +24,14 @@ dependencies:
   #   - freesasa
   #   - docko
   #   - chai_lab
+
+
+#   import sys
+# from docko.boltz import *
+
+# base_dir = ''
+# run_boltz('boltzproteinexample', 
+#          'MSIEKIPGYTYGKTESMSPLNLEDLKLLKDSVMFTEEDEKYLKKAGEVLEDQVEEILDTWYGFVGSHPHLLYYFTSPDGTPNEEYLAAVRKRFSKWILDTCNRNYDQAWLDYQYEIGLRHHRTKKNRTDNVESVPNINYRYLVAFIYPITATIKPFLARKGHTSEEVEKMHQAWFKATVLQVALWSYPYVKQGDF', 
+#          'CCCCC(CC)COC(=O)C1=CC=CC=C1C(=O)OCC(CC)CCCC',
+#          base_dir
+#         )

@@ -6,7 +6,7 @@ import sys
 import argparse
 from pathlib import Path 
 
-sys.path.insert(0, '/mnt/nfs/vol8t/home/amora/code/Filterzyme/')
+sys.path.insert(0, '/mnt/labs/data/mora/code/Filterzyme/')
 import filterzyme
 print(filterzyme.__file__)  
 
@@ -16,9 +16,14 @@ from filterzyme.pipeline_v2 import Superimposition
 from filterzyme.pipeline_v2 import GeometricFilters
 
 
-df = pd.read_csv('PBP_data_formatted.csv')
+df = pd.read_csv('PBP_data_formatted.csv').head(1)
 # Just look at nicotine
-df = df[df['substrate_name'] == 'Nicotine']
+#df = df[df['substrate_name'] == 'Nicotine']
+df = df[df['Sequence'] != None]
+df = df[df['Sequence'] != '']
+df = df[df['Sequence'] != 'NAN']
+# df['substrate_moiety'] = 'C2=CN=CC=C2'
+# df.to_csv('PBP_nicotine_only.csv', index=False)
 
 base_output_dir = "filterzyme_output"
 
@@ -37,7 +42,15 @@ if __name__ == "__main__":
         base_output_dir=base_output_dir, 
     )
 
-pipeline.run()
+    pipeline.run()
+    # df = pd.read_pickle('/mnt/labs/data/mora/code/Filterzyme/benchmarking/PBP_binding/filterzyme_output/superimposition/ligandRMSD.pkl')
+    # print(df)
+    # df = df[df['substrate_name'] == 'Nicotine']
+    # filtering = GeometricFilters(
+    #     esterase = 1, 
+    #     df = df, 
+    #     input_dir = Path(base_output_dir) / 'superimposition',
+    #     output_dir = Path(base_output_dir) / 'geometricfiltering')  
 
 """
     docking = Docking(

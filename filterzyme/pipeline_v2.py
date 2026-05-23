@@ -90,7 +90,9 @@ class Docking:
         pred_in = reps.rename(columns={'rep_entry': 'Entry'})
         
         df_cat_res = pred_in << ActiveSitePred('Entry', 'Sequence')
-        residues = dict(zip(df_cat_res.id, df_cat_res.residues))
+        print(df_cat_res.columns)
+        print(df_cat_res.head())
+        residues = dict(zip(df_cat_res.label, df_cat_res.Squidly_Ensemble_Residues))
         df_squidly = self.df.copy()
         df_squidly['Squidly_CR_Position'] = [residues.get(e) for e in df_squidly['Entry'].values]
         # Remove entries without catalytic residues for proteins without user-specified residues for vina-docking
@@ -149,7 +151,10 @@ class Docking:
         if 'cofactor_smiles' not in df_chai.columns:
             df_chai['cofactor_smiles'] = None
             # ToDo make path modular!!!
-        df_boltz = df_chai << (Boltz('Entry', 'Sequence', 'substrate_smiles', 'cofactor_smiles', boltz_dir, self.num_threads, args=['--cache', '$CONDA_PREFIX/lib/python3.12/site-packages/boltz/'])
+    # def __init__(self, id_col: str, seq_col: str, substrate_col: str, intermediate_col: str, output_dir: str, 
+     # num_threads: 1, env_name = None, args=None):
+        df_boltz = df_chai << (Boltz('Entry', 'Sequence', 'substrate_smiles', 'cofactor_smiles', boltz_dir, self.num_threads, 
+                                     args=['--cache', '/mnt/storage01/home/amora/.conda/envs/filterzyme/lib/python3.12/site-packages/boltz/cache/', '--use_msa_server'])
                             >> Save(Path(self.output_dir)/'boltz.pkl'))
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz

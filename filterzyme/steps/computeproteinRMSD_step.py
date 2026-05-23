@@ -232,8 +232,13 @@ class ProteinRMSD(Step):
         )
 
         # Merge both stats into rmsd_df
-        rmsd_df = rmsd_df.merge(entry_pair_stats, on="Entry", how="left")
-        rmsd_df = rmsd_df.merge(entry_overall_stats, on="Entry", how="left")
+        print("Merging entry-wise stats into main RMSD dataframe...")
+        print(entry_pair_stats.columns)
+        print(entry_pair_stats.head())
+        print(entry_overall_stats.columns)
+        print(entry_overall_stats.head())
+        rmsd_df = rmsd_df.merge(entry_pair_stats, how="left") #on="Entry",
+        rmsd_df = rmsd_df.merge(entry_overall_stats, how="left") #on="Entry",
         print(rmsd_df)
 
         # Optionally generate heatmaps

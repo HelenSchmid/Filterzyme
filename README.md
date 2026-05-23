@@ -34,20 +34,27 @@ cd EnzymeStructuralFiltering
 python setup.py sdist bdist_wheel
 pip install dist/filterzyme-0.0.6.tar.gz --use-deprecated=legacy-resolver
 pip install enzymetk==0.0.8
+pip install "click>=8.2.0"
 ```
 
 If you have issues with openbabel try running the below code (needed to get working on AITHYRA cluster)
 ```
+conda install conda-forge::fpocket
+pip install squidly
+squidly install
 conda install -c conda-forge openbabel swig -y
 conda install -c conda-forge plip -y
 export PYTHONPATH=$CONDA_PREFIX/lib/python3.12/site-packages:$PYTHONPATH
 conda install -y "numpy<2.0" "pandas<3.0" "openbabel" "plip"
-conda install -y "rdkit<=2023.09.6"
-```
+# Make sure your rdkit version is high otherwise may have issues with Boltz
+conda install -c conda-forge rdkit>=2024.03 -y
+pip install transformers
 
+```
+Chai: Needs docko package. Install with: pip install docko. Error: Numba needs NumPy 2.1 or less. Got NumPy 2.4.
 ## Download cache to the installed directory using
 
-```boltz predict <input file> --cache $CONDA_PREFIX/lib/python3.12/site-packages/boltz/````
+```boltz predict example.yml --cache $CONDA_PREFIX/lib/python3.12/site-packages/boltz/cache/````
 
 Then you need to pass this to the 
 

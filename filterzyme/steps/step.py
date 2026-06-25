@@ -48,24 +48,10 @@ class Pipeline:
         return self.execute(other)
 '''
 
-class Step():
-    
-    def execute(self, df: pd.DataFrame) -> pd.DataFrame:
-        """ Execute some shit """ 
-        return df
-    
-    def __rshift__(self, other: Step) -> Step:
-        return Pipeline(self, other)
-        
-    def __rlshift__(self, other: pd.DataFrame) -> pd.DataFrame:
-        """
-        Overriding the right shift operator to allow for the pipeline to be executed.
-        """
-        return self.execute(other)
-    
 class Step:
     def execute(self, input_data: Union[pd.DataFrame, str, Path]) -> pd.DataFrame:
-        return pd.DataFrame()
+        """Execute the step on the input data. Subclasses should override this."""
+        return input_data
 
     def __rshift__(self, other: 'Step') -> 'Pipeline':
         return Pipeline(self, other)

@@ -16,43 +16,41 @@ from filterzyme.pipeline_v2 import Superimposition
 from filterzyme.pipeline_v2 import GeometricFilters
 
 
-df = pd.read_csv('PBP_data_formatted.csv')
+df = pd.read_csv('PDE_data_formatted.csv')
 # Just look at nicotine
-df = df[df['substrate_name'] == 'Nicotine']
 df = df[df['Sequence'] != None]
 df = df[df['Sequence'] != '']
 df = df[df['Sequence'] != 'NAN']
-df['substrate_moiety'] = 'C2=CN=CC=C2'
+df['substrate_moiety'] = '[C@@H]'
+df['cofactor_moiety'] = None
+df['id'] = df['Entry'].values
 
-df = df.head(1)
-# df.to_csv('PBP_nicotine_only.csv', index=False)
 
 base_output_dir = "filterzyme_output"
 
 if __name__ == "__main__":
 
     # Configure and run
-    pipeline = Pipeline(
-        df = df,
-        max_matches=1000,
-        esterase = 0,
-        num_threads=1,
-        metagenomic_enzymes=0,
-        skip_catalytic_residue_prediction = True, 
-        alternative_structure_for_vina = 'Chai', 
-        #squidly_dir='/nvme2/helen/EnzymeStructuralFiltering/filtering_pipeline/squidly_final_models/',
-        base_output_dir=base_output_dir, 
-    )
+    # pipeline = Pipeline(
+    #     df = df,
+    #     max_matches=1000,
+    #     esterase = 0,
+    #     num_threads=1,
+    #     metagenomic_enzymes=0,
+    #     skip_catalytic_residue_prediction = True, 
+    #     alternative_structure_for_vina = 'Chai', 
+    #     #squidly_dir='/nvme2/helen/EnzymeStructuralFiltering/filtering_pipeline/squidly_final_models/',
+    #     base_output_dir=base_output_dir, 
+    # )
 
-    pipeline.run()
-    # df = pd.read_pickle('/mnt/labs/data/mora/code/Filterzyme/benchmarking/PBP_binding/filterzyme_output/superimposition/ligandRMSD.pkl')
-    # print(df)
-    # df = df[df['substrate_name'] == 'Nicotine']
-    # filtering = GeometricFilters(
-    #     esterase = 1, 
-    #     df = df, 
-    #     input_dir = Path(base_output_dir) / 'superimposition',
-    #     output_dir = Path(base_output_dir) / 'geometricfiltering')  
+    #pipeline.run()
+    df = pd.read_pickle('/mnt/labs/data/mora/code/Filterzyme/benchmarking/PBP_binding/filterzyme_output/superimposition/ligandRMSD.pkl')
+    print(df)
+    filtering = GeometricFilters(
+        esterase = 1, 
+        df = df, 
+        input_dir = Path(base_output_dir) / 'superimposition',
+        output_dir = Path(base_output_dir) / 'geometricfiltering')  
 
 """
     docking = Docking(

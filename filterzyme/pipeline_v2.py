@@ -10,7 +10,6 @@ from functools import wraps
 from filterzyme.utils.helpers import log_section, log_subsection, log_boxed_note, generate_boltz_structure_path, generate_chai_structure_path
 from filterzyme.utils.helpers import clean_protein_sequence, delete_empty_subdirs, extract_docking_metrics, valid_file_list, add_metrics
 from filterzyme.utils.helpers import log_usage
-#from filterzyme.steps.predict_catalyticsite_step import ActiveSitePred
 from filterzyme.steps.save_step import Save
 from filterzyme.steps.dock_vina_step import Vina
 from filterzyme.steps.extract_docking_metrics_step import DockingMetrics
@@ -30,8 +29,6 @@ from enzymetk.dock_chai_step import Chai
 from enzymetk.dock_boltz_step import Boltz
 from enzymetk.predict_catalyticsite_step import ActiveSitePred
 
-#from enzymetk.dock_vina_step import Vina
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.basicConfig(
@@ -40,27 +37,35 @@ logging.basicConfig(
 )
 
 """
-In this version of the pipline, we omit vina docking for de novo designed enzymes because squidly cannot reliably predict the catalytic residues. 
-Instead, we focus on docking using Chai and Boltz only for such enzymes. And as catalytic residues we either take user-defined ones or the closest predicted nucleophile. 
-"""
+Pipeline v2 supports Chai + Boltz docking by default, with optional Vina docking.
 
+For de novo designed enzymes, Vina docking can be skipped (run_vina=False) because
+catalytic residue prediction may not be reliable. For non-de-novo enzymes with known
+active sites, enable Vina docking (run_vina=True) for physics-based docking.
+"""
 
 
 class Docking:
     def __init__(
         self,
         df: pd.DataFrame,
+        boltz_cache_dir: str,
         output_dir: Union[str, Path] = "pipeline_output",
         squidly_dir: Union[str, Path] = '',
-        metagenomic_enzymes = 0,
-        skip_catalytic_residue_prediction = False,
-        alternative_structure_for_vina = 'Chai',
-        num_threads = 1
+        metagenomic_enzymes: int = 0,
+        skip_catalytic_residue_prediction: bool = False,
+        run_vina: bool = False,
+        alternative_structure_for_vina: str = 'Chai',
+        use_msa_server: bool = True,
+        num_threads: int = 1
     ):
         self.df = df.copy()
+        self.boltz_cache_dir = boltz_cache_dir
         self.squidly_dir = Path(squidly_dir) 
         self.skip_catalytic_residue_prediction = skip_catalytic_residue_prediction
+        self.run_vina = run_vina
         self.alternative_structure_for_vina = alternative_structure_for_vina
+        self.use_msa_server = use_msa_server
         self.num_threads = num_threads
         self.output_dir = Path(output_dir)
         self.metagenomic_enzymes = metagenomic_enzymes
@@ -77,8 +82,14 @@ class Docking:
 
         log_section("Protein-Ligand docking")
         df_chai = self._run_chai(df_squidly)
-        df_boltz= self._run_boltz(df_chai)
-        df_metrics = self._extract_docking_quality_metrics(df_boltz)
+        df_boltz = self._run_boltz(df_chai)
+
+        if self.run_vina:
+            df_docked = self._run_vina(df_boltz)
+        else:
+            df_docked = df_boltz
+
+        df_metrics = self._extract_docking_quality_metrics(df_docked)
 
     @log_usage("Predict catalytic residues")
     def _catalytic_residue_prediction(self):
@@ -90,7 +101,7 @@ class Docking:
         pred_in = reps.rename(columns={'rep_entry': 'Entry'})
         
         df_cat_res = pred_in << ActiveSitePred('Entry', 'Sequence')
-        residues = dict(zip(df_cat_res.id, df_cat_res.residues))
+        residues = dict(zip(df_cat_res.label, df_cat_res.Squidly_Ensemble_Residues))
         df_squidly = self.df.copy()
         df_squidly['Squidly_CR_Position'] = [residues.get(e) for e in df_squidly['Entry'].values]
         # Remove entries without catalytic residues for proteins without user-specified residues for vina-docking
@@ -148,25 +159,91 @@ class Docking:
         boltz_dir.mkdir(exist_ok=True, parents=True)
         if 'cofactor_smiles' not in df_chai.columns:
             df_chai['cofactor_smiles'] = None
-            # ToDo make path modular!!!
-        df_boltz = df_chai << (Boltz('Entry', 'Sequence', 'substrate_smiles', 'cofactor_smiles', boltz_dir, self.num_threads, args=['--cache', '$CONDA_PREFIX/lib/python3.12/site-packages/boltz/'])
+
+        # Build args dynamically from parameters
+        boltz_args = ['--cache', str(self.boltz_cache_dir)]
+        if self.use_msa_server:
+            boltz_args.append('--use_msa_server')
+
+        df_boltz = df_chai << (Boltz('Entry', 'Sequence', 'substrate_smiles', 'cofactor_smiles', boltz_dir, self.num_threads, 
+                                     args=boltz_args)
                             >> Save(Path(self.output_dir)/'boltz.pkl'))
         df_boltz.rename(columns = {'output_dir':'boltz_dir'}, inplace=True)
         return df_boltz
 
+    @log_usage("Running Vina docking")
+    def _run_vina(self, df_boltz):
+        log_subsection("Docking using Vina")
+        vina_dir = Path(self.output_dir) / 'vina/'
+        vina_dir.mkdir(exist_ok=True, parents=True)
+        delete_empty_subdirs(vina_dir)
+
+        if self.metagenomic_enzymes == 1:
+            if self.alternative_structure_for_vina == 'Chai':
+                log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures.')    
+                df_boltz['structure'] = df_boltz['chai_dir'].apply(generate_chai_structure_path)
+            elif self.alternative_structure_for_vina == 'Boltz':
+                log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures.')    
+                df_boltz['structure'] = df_boltz['boltz_dir'].apply(generate_boltz_structure_path)
+        else: 
+            df_boltz['structure'] = None  # or path to AF structure
+        
+        # Initial Vina docking attempt
+        df_vina = df_boltz << (Vina('Entry', 'structure', 'Sequence', 'substrate_smiles', 'substrate_name', 'catalytic_residues', vina_dir, self.num_threads))
+        df_vina.rename(columns = {'output_dir':'vina_dir'}, inplace=True)
+
+        # Handle missing AF2 structures by retrying with alternative structure
+        if df_vina['vina_dir'].isnull().any():
+            missing_entries = df_vina[df_vina['vina_dir'].isnull()]['Entry'].unique()
+            delete_empty_subdirs(vina_dir)    
+
+            if self.alternative_structure_for_vina == 'Chai':
+                log_boxed_note('Fallback to Chai structures for docking due to missing AF2 structures. ' + f'Entries: {list(missing_entries)}')    
+                df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
+                df_missing['structure'] = df_missing['chai_dir'].apply(generate_chai_structure_path)
+
+            elif self.alternative_structure_for_vina == 'Boltz':
+                log_boxed_note('Fallback to Boltz structures for docking due to missing AF2 structures. ' + f'Entries: {list(missing_entries)}')    
+                df_missing = df_vina[df_vina['vina_dir'].isnull()].copy()
+                df_missing['structure'] = df_missing['boltz_dir'].apply(generate_boltz_structure_path)
+
+            df_missing_docked = df_missing << (Vina('Entry', 'structure', 'Sequence', 'substrate_smiles', 'substrate_name', 'catalytic_residues', vina_dir, self.num_threads))
+            df_missing_docked.rename(columns = {'output_dir':'vina_dir_missing'}, inplace=True)
+
+            # Merge both docking attempts
+            df_vina_combined = pd.merge(
+                df_vina, df_missing_docked[['Entry', 'vina_dir_missing']], on='Entry', how='left'
+            )
+
+            # Choose first attempt if available, otherwise fallback
+            df_vina_combined['vina_dir'] = df_vina_combined.apply(
+                lambda row: row['vina_dir'] if pd.notnull(row['vina_dir']) else row['vina_dir_missing'],
+                axis=1
+            )
+            df_vina_combined.drop(columns=['vina_dir_missing'], inplace=True)
+            df_vina = df_vina_combined.copy()
+  
+        df_vina.to_pickle(Path(self.output_dir)/'vina.pkl') 
+        return df_vina
 
     @log_usage("Extract docking quality metrics")
     def _extract_docking_quality_metrics(self, df):
         log_subsection('Extracting docking quality metrics')
-        df = df[df["boltz_dir"].notna()].copy()
+        # When Vina is enabled, filter on vina_dir; otherwise filter on boltz_dir
+        if self.run_vina and 'vina_dir' in df.columns:
+            df = df[df["vina_dir"].notna()].copy()
+        else:
+            df = df[df["boltz_dir"].notna()].copy()
         df_metrics = df << (DockingMetrics(input_dir = Path(self.output_dir), output_dir = Path(self.output_dir)) 
                         >> Save(Path(self.output_dir) / 'dockingmetrics.pkl'))
         return df_metrics
 
 
 class Superimposition:
-    def __init__(self, maxMatches, input_dir="pipeline_output", output_dir="pipeline_output", num_threads=1):
+    def __init__(self, maxMatches, input_dir="pipeline_output", output_dir="pipeline_output",
+                 include_vina: bool = False, num_threads=1):
         self.maxMatches = maxMatches
+        self.include_vina = include_vina
         self.num_threads = num_threads
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -188,18 +265,36 @@ class Superimposition:
     def _prepare_files_for_superimposition(self):
         df_metrics = pd.read_pickle(Path(self.input_dir) / 'dockingmetrics.pkl')
         preparedfiles_dir = Path(self.output_dir) / 'preparedfiles_for_superimposition/'
-        df_metrics << (PrepareChai('chai_dir', preparedfiles_dir, 1)
-                >> PrepareBoltz('boltz_dir' , preparedfiles_dir, 1))
+
+        if self.include_vina:
+            df_metrics << (PrepareVina('vina_dir', 'substrate_name', preparedfiles_dir)
+                    >> PrepareChai('chai_dir', preparedfiles_dir, 1)
+                    >> PrepareBoltz('boltz_dir', preparedfiles_dir, 1))
+        else:
+            df_metrics << (PrepareChai('chai_dir', preparedfiles_dir, 1)
+                    >> PrepareBoltz('boltz_dir', preparedfiles_dir, 1))
         return df_metrics
     
     @log_usage("Superimposing structures")
-    def _superimposition(self,  df):                   
+    def _superimposition(self, df):                   
         output_sup_dir = Path(self.output_dir) / 'superimposed_structures'
 
-        df = df[df['chai_files_for_superimposition'].apply(valid_file_list)]
+        if self.include_vina:
+            # Filter on rows where both vina and chai files are available
+            df = df[df['vina_files_for_superimposition'].apply(valid_file_list)]
+            df = df[df['chai_files_for_superimposition'].apply(valid_file_list)]
 
-        df_sup = df << (SuperimposeStructures('chai_files_for_superimposition',  'boltz_files_for_superimposition',  output_dir = output_sup_dir, name1='chai', name2='boltz', num_threads = self.num_threads)
-                >> Save(Path(self.output_dir) / 'superimposedstructures.pkl'))
+            # 3 pairwise superimpositions: vina-chai, vina-boltz, chai-boltz
+            df_sup = df << (SuperimposeStructures('vina_files_for_superimposition', 'chai_files_for_superimposition', output_dir=output_sup_dir, name1='vina', name2='chai', num_threads=self.num_threads)
+                    >> SuperimposeStructures('vina_files_for_superimposition', 'boltz_files_for_superimposition', output_dir=output_sup_dir, name1='vina', name2='boltz', num_threads=self.num_threads)
+                    >> SuperimposeStructures('chai_files_for_superimposition', 'boltz_files_for_superimposition', output_dir=output_sup_dir, name1='chai', name2='boltz', num_threads=self.num_threads)
+                    >> Save(Path(self.output_dir) / 'superimposedstructures.pkl'))
+        else:
+            # Only chai-boltz superimposition
+            df = df[df['chai_files_for_superimposition'].apply(valid_file_list)]
+
+            df_sup = df << (SuperimposeStructures('chai_files_for_superimposition', 'boltz_files_for_superimposition', output_dir=output_sup_dir, name1='chai', name2='boltz', num_threads=self.num_threads)
+                    >> Save(Path(self.output_dir) / 'superimposedstructures.pkl'))
         return df_sup
     
     @log_usage("Calculating protein RMSD")
@@ -218,17 +313,6 @@ class Superimposition:
         ligandRMSD_dir.mkdir(exist_ok=True, parents=True) 
         input_dir = Path(self.output_dir)  / 'superimposed_structures'
 
-        # Check for required columns
-        print("DEBUG: 'best_structure' in df:", 'best_structure' in df.columns)
-        print("DEBUG: Unique Entry values:", df['Entry'].unique())
-        
-        # Check superimposed structure files exist for failing entry
-        failing_entry = '83911b_MDH'
-        sup_dir = Path(self.output_dir) / 'superimposed_structures' / failing_entry
-        print(f"DEBUG: Superimposed files for {failing_entry} exist:", sup_dir.exists())
-        if sup_dir.exists():
-            print(f"DEBUG: Files in {sup_dir}:", list(sup_dir.glob('*')))
-
         df_ligandRMSD_pairwise, df_ligandRMSD = df << (LigandRMSD('Entry', input_dir = input_dir, output_dir = ligandRMSD_dir, visualize_heatmaps= True, maxMatches = self.maxMatches))
         df_ligandRMSD.to_pickle(Path(self.output_dir) / 'ligandRMSD_prior.pkl')
         df_ligandRMSD_w_metrics = extract_docking_metrics(df_ligandRMSD)
@@ -238,11 +322,11 @@ class Superimposition:
 
 
 class GeometricFilters:
-    def __init__(self,  df, esterase = 0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
+    def __init__(self, df, esterase=0, input_dir="superimposition", output_dir="geometricfiltering", num_threads=1):
         self.esterase = esterase
         self.df = df
         self.num_threads = num_threads
-        if isinstance(df, str): # Allow passing of a string
+        if isinstance(df, str):  # Allow passing of a string
             self.df = pd.read_csv(df)
         else:
             self.df = df.copy()
@@ -306,25 +390,31 @@ class GeometricFilters:
 
 
 class Pipeline:
-    """Full pipeline"""
+    """Full pipeline: Docking -> Superimposition -> GeometricFiltering"""
     def __init__(self,
                 df, 
+                boltz_cache_dir: str,
                 max_matches: int = 1000,
                 esterase: int = 0,
                 metagenomic_enzymes: int = 0,
                 skip_catalytic_residue_prediction: bool = False,
+                run_vina: bool = False,
                 alternative_structure_for_vina: str = 'Boltz', 
+                use_msa_server: bool = True,
                 num_threads: int = 1,
                 squidly_dir: Union[str, Path] = '',
                 base_output_dir: Union[str, Path] = "pipeline_output"
                 ):
                  
         self.df = df.copy()
+        self.boltz_cache_dir = boltz_cache_dir
         self.max_matches = max_matches
         self.esterase = esterase
         self.metagenomic_enzymes = metagenomic_enzymes
         self.skip_catalytic_residue_prediction = skip_catalytic_residue_prediction
+        self.run_vina = run_vina
         self.alternative_structure_for_vina = alternative_structure_for_vina
+        self.use_msa_server = use_msa_server
         self.num_threads = num_threads
         self.squidly_dir = squidly_dir
         self.base_output_dir = Path(base_output_dir)
@@ -334,11 +424,14 @@ class Pipeline:
         # Docking
         docking = Docking(
             df=self.df,
-            output_dir= Path(self.base_output_dir) / "docking",
+            boltz_cache_dir=self.boltz_cache_dir,
+            output_dir=Path(self.base_output_dir) / "docking",
             squidly_dir=Path(self.squidly_dir),
-            metagenomic_enzymes= self.metagenomic_enzymes,
-            skip_catalytic_residue_prediction = self.skip_catalytic_residue_prediction,
-            alternative_structure_for_vina = self.alternative_structure_for_vina, 
+            metagenomic_enzymes=self.metagenomic_enzymes,
+            skip_catalytic_residue_prediction=self.skip_catalytic_residue_prediction,
+            run_vina=self.run_vina,
+            alternative_structure_for_vina=self.alternative_structure_for_vina,
+            use_msa_server=self.use_msa_server,
             num_threads=self.num_threads,
         )
         docking.run()
@@ -348,20 +441,17 @@ class Pipeline:
             maxMatches=self.max_matches,
             input_dir=Path(self.base_output_dir) / "docking",
             output_dir=Path(self.base_output_dir) / "superimposition",
+            include_vina=self.run_vina,
             num_threads=self.num_threads,
         )
         superimp.run()  
 
-
-        # Geometric filtering for all structures
-
         # Geometric filtering for best structure only
         gf = GeometricFilters(
-            df = pd.read_pickle(Path(self.base_output_dir) / 'superimposition/ligandRMSD.pkl'),
+            df=pd.read_pickle(Path(self.base_output_dir) / 'superimposition/ligandRMSD.pkl'),
             esterase=self.esterase,
             input_dir=Path(self.base_output_dir) / "superimposition",
             output_dir=Path(self.base_output_dir) / "geometricfiltering",
             num_threads=self.num_threads,
         )
         gf.run()
-

@@ -88,6 +88,10 @@ class Vina(Step):
                 pool = ThreadPool(self.num_threads)
                 df_list = np.array_split(df, self.num_threads)
                 results = pool.map(self.__execute, df_list)
+                pool.close()
+                pool.join()
+                # Flatten list of lists returned by pool.map
+                results = [item for sublist in results for item in sublist]
             else:
                 results = self.__execute(df)
             df['output_dir'] = results

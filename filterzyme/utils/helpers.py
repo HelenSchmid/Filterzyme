@@ -12,6 +12,7 @@ from io import StringIO
 from biotite.structure import AtomArrayStack
 from biotite.structure.io.pdb import PDBFile
 from rdkit import Chem
+from rdkit.Chem import AllChem
 from rdkit.Chem.rdchem import Mol
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,6 @@ def log_boxed_note(text):
 
 import time
 import psutil
-import logging
 from functools import wraps
 
 def log_usage(section_name: str, log_file: str = "filterzyme_usage.log"):
@@ -218,9 +218,9 @@ def extract_ligand_from_PDB(input_pdb, output_pdb, ligand_resname):
     io.save(str(output_pdb), LigandSelect(ligand_resname))
 
 
-def add_metrics(best_strucutures_df, df_dockmetrics):
+def add_metrics(best_structures_df, df_dockmetrics):
     """
-    Merges docking metrics from df_dockmetrics into best_strucutures_df based on the 'Entry' column.
+    Merges docking metrics from df_dockmetrics into best_structures_df based on the 'Entry' column.
     Extracts structure IDs and vina indices from the 'best_structure' column.
     """
     chai_columns = ["chai_aggregate_score", "chai_ptm", "chai_iptm",
@@ -233,6 +233,8 @@ def add_metrics(best_strucutures_df, df_dockmetrics):
         "boltz2_complex_pde", "boltz2_complex_ipde", 
         "boltz2_chains_ptm", "boltz2_pair_chains_iptm"]
     
+    # These are the dict-valued metric columns to extract from
+    dict_columns = chai_columns + boltz_columns
 
     def extract_structure_id(full_name):
         parts = full_name.split("_")
@@ -240,37 +242,42 @@ def add_metrics(best_strucutures_df, df_dockmetrics):
             return "_".join(parts[:-1])
         return full_name
 
-    def extract_index(structure):
+    def extract_vina_index(structure):
         if structure.endswith("_vina"):
             try:
                 return int(structure.split("_")[-2])
-            except:
+            except Exception:
                 return None
         return None
 
-    df_dockmetrics_reduced = df_dockmetrics[["Entry"] + dict_columns + ["vina_affinities"]].drop_duplicates(subset="Entry")
-    merged_df = pd.merge(best_strucutures_df, df_dockmetrics_reduced, on="Entry", how="left")
+    # Only include columns that actually exist in df_dockmetrics
+    available_dict_cols = [c for c in dict_columns if c in df_dockmetrics.columns]
+    merge_cols = ["Entry"] + available_dict_cols
+    if "vina_affinities" in df_dockmetrics.columns:
+        merge_cols.append("vina_affinities")
+
+    df_dockmetrics_reduced = df_dockmetrics[merge_cols].drop_duplicates(subset="Entry")
+    merged_df = pd.merge(best_structures_df, df_dockmetrics_reduced, on="Entry", how="left")
 
     # Extract structure ID and replace dict columns with values
     structure_ids = merged_df["docked_structure"].map(extract_structure_id)
 
-    for col in dict_columns:
+    for col in available_dict_cols:
         merged_df[col] = [
             d.get(structure_id) if isinstance(d, dict) else None
             for d, structure_id in zip(merged_df[col], structure_ids)
         ]
 
     # Extract vina affinity
-    vina_indices = merged_df["docked_structure"].map(extract_vina_index)
+    if "vina_affinities" in merged_df.columns:
+        vina_indices = merged_df["docked_structure"].map(extract_vina_index)
+        merged_df["vina_affinity"] = [
+            v.get(idx) if isinstance(v, dict) and idx is not None else None
+            for v, idx in zip(merged_df["vina_affinities"], vina_indices)
+        ]
+        merged_df = merged_df.drop(columns=["vina_affinities"])
 
-    merged_df["vina_affinity"] = [
-        v.get(idx) if isinstance(v, dict) and idx is not None else None
-        for v, idx in zip(merged_df["vina_affinities"], vina_indices)
-    ]
-
-    merged_df_final = merged_df.drop(columns=["vina_affinities"])
-
-    return merged_df_final
+    return merged_df
 
 
 

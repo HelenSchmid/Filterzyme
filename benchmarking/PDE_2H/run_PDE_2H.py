@@ -31,27 +31,26 @@ base_output_dir = "filterzyme_output"
 if __name__ == "__main__":
 
     # Configure and run
-    pipeline = Pipeline(
-        df = df,
-        max_matches=1000,
-        esterase = 0,
-        num_threads=1,
-        metagenomic_enzymes=0,
-        skip_catalytic_residue_prediction = False, 
-        alternative_structure_for_vina = 'Chai', 
-        #squidly_dir='/nvme2/helen/EnzymeStructuralFiltering/filtering_pipeline/squidly_final_models/',
-        base_output_dir=base_output_dir, 
-    )
+    # pipeline = Pipeline(
+    #     df = df,
+    #     max_matches=1000,
+    #     esterase = 0,
+    #     num_threads=1,
+    #     metagenomic_enzymes=0,
+    #     skip_catalytic_residue_prediction = True, 
+    #     alternative_structure_for_vina = 'Chai', 
+    #     #squidly_dir='/nvme2/helen/EnzymeStructuralFiltering/filtering_pipeline/squidly_final_models/',
+    #     base_output_dir=base_output_dir, 
+    # )
 
-    pipeline.run()
-    # df = pd.read_pickle('/mnt/labs/data/mora/code/Filterzyme/benchmarking/PBP_binding/filterzyme_output/superimposition/ligandRMSD.pkl')
-    # print(df)
-    # df = df[df['substrate_name'] == 'Nicotine']
-    # filtering = GeometricFilters(
-    #     esterase = 1, 
-    #     df = df, 
-    #     input_dir = Path(base_output_dir) / 'superimposition',
-    #     output_dir = Path(base_output_dir) / 'geometricfiltering')  
+    #pipeline.run()
+    df = pd.read_pickle('/mnt/labs/data/mora/code/Filterzyme/benchmarking/PBP_binding/filterzyme_output/superimposition/ligandRMSD.pkl')
+    print(df)
+    filtering = GeometricFilters(
+        esterase = 1, 
+        df = df, 
+        input_dir = Path(base_output_dir) / 'superimposition',
+        output_dir = Path(base_output_dir) / 'geometricfiltering')  
 
 """
     docking = Docking(
